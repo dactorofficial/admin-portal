@@ -64,19 +64,58 @@ export default function DoctorKYC() {
 
   const fetchDoctors = async (showLoading = true) => {
     try {
-      if (showLoading) setLoading(true)
-      setIsRefreshing(true)
-      const { data, error } = await supabase.from('doctors').select('*').order('created_at', { ascending: false })
+      if (showLoading) setLoading(true);
+      setIsRefreshing(true);
+      const { data, error } = await supabase.from('doctors').select('*').order('created_at', { ascending: false });
       if (!error && data) {
-        setDoctors((data as Doctor[]).map(parseDoctorMeta))
+        const doctorsData = (data as Doctor[]).map(parseDoctorMeta).map(doc => {
+          let picUrl = doc.profile_picture_url || ''
+          if (picUrl) {
+            if (picUrl.startsWith('content://')) {
+              picUrl = '' // Local device URI cannot render on web browser
+            } else if (!picUrl.startsWith('http')) {
+              const cleanPath = picUrl.replace(/^\//, '')
+              const buckets = ['doctor_photos', 'doctor-kyc', 'avatars']
+              for (const bucket of buckets) {
+                const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(cleanPath)
+                if (urlData?.publicUrl) {
+                  picUrl = urlData.publicUrl
+                  break
+                }
+              }
+            }
+          }
+
+          let licUrl = doc.license_doc_url || ''
+          if (licUrl && !licUrl.startsWith('http') && !licUrl.startsWith('content://')) {
+            const cleanPath = licUrl.replace(/^\//, '')
+            const { data: urlData } = supabase.storage.from('doctor-kyc').getPublicUrl(cleanPath)
+            if (urlData?.publicUrl) licUrl = urlData.publicUrl
+          }
+
+          let certUrl = doc.certificates_doc_url || ''
+          if (certUrl && !certUrl.startsWith('http') && !certUrl.startsWith('content://') && !certUrl.startsWith('{')) {
+            const cleanPath = certUrl.replace(/^\//, '')
+            const { data: urlData } = supabase.storage.from('doctor-kyc').getPublicUrl(cleanPath)
+            if (urlData?.publicUrl) certUrl = urlData.publicUrl
+          }
+
+          return {
+            ...doc,
+            profile_picture_url: picUrl,
+            license_doc_url: licUrl,
+            certificates_doc_url: certUrl
+          }
+        });
+        setDoctors(doctorsData);
       } else {
-        setDoctors([])
+        setDoctors([]);
       }
     } catch {
-      setDoctors([])
+      setDoctors([]);
     } finally {
-      if (showLoading) setLoading(false)
-      setIsRefreshing(false)
+      if (showLoading) setLoading(false);
+      setIsRefreshing(false);
     }
   }
 
@@ -193,7 +232,14 @@ export default function DoctorKYC() {
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold overflow-hidden shrink-0">
                     {doctor.profile_picture_url ? (
-                      <img src={doctor.profile_picture_url} alt={doctor.full_name} className="w-full h-full object-cover" />
+                      <img
+                        src={doctor.profile_picture_url}
+                        alt={doctor.full_name}
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as HTMLElement).style.display = 'none';
+                        }}
+                      />
                     ) : (
                       'Dr'
                     )}

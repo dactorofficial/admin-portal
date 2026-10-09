@@ -23,6 +23,25 @@ function parseClinicMeta(clinic: Clinic) {
     }
   }
 
+  // Resolve pictures: if relative storage path, convert to public Supabase Storage URL
+  if (Array.isArray(pictures)) {
+    pictures = pictures.map((pic: string) => {
+      if (pic && !pic.startsWith('http') && !pic.startsWith('content://')) {
+        const clean = pic.replace(/^\//, '')
+        const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
+        return data?.publicUrl || pic
+      }
+      return pic
+    })
+  }
+
+  // Resolve registration document URL
+  if (regDoc && !regDoc.startsWith('http') && !regDoc.startsWith('content://')) {
+    const clean = regDoc.replace(/^\//, '')
+    const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
+    if (data?.publicUrl) regDoc = data.publicUrl
+  }
+
   return {
     ...clinic,
     pan_number: pan,
@@ -226,14 +245,23 @@ export default function ClinicVerification() {
                     </span>
                   )}
                   {clinic.registration_doc_url && (
-                    <a
-                      href={clinic.registration_doc_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-1 bg-emerald-950/40 hover:bg-emerald-950/70 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-700/50 transition font-semibold"
-                    >
-                      <FileText className="w-3.5 h-3.5" /> View Registration Paper
-                    </a>
+                    clinic.registration_doc_url.startsWith('content://') ? (
+                      <span
+                        title="Uploaded from older mobile build (local phone URI). Requires updated mobile build to upload to Supabase Storage."
+                        className="flex items-center gap-1 bg-amber-950/40 text-amber-400 px-2.5 py-1 rounded-lg border border-amber-700/50 font-semibold"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> Registration Paper (Old Mobile URI)
+                      </span>
+                    ) : (
+                      <a
+                        href={clinic.registration_doc_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex items-center gap-1 bg-emerald-950/40 hover:bg-emerald-950/70 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-700/50 transition font-semibold"
+                      >
+                        <FileText className="w-3.5 h-3.5" /> View Registration Paper
+                      </a>
+                    )
                   )}
                 </div>
 
@@ -245,21 +273,32 @@ export default function ClinicVerification() {
                     </span>
                     <div className="flex flex-wrap items-center gap-2">
                       {clinic.pictures.map((picUrl, idx) => (
-                        <div
-                          key={idx}
-                          onClick={() => setSelectedPreviewImage(picUrl)}
-                          className="w-16 h-16 rounded-xl border border-slate-700 overflow-hidden bg-slate-900 cursor-pointer hover:border-indigo-500 transition group relative"
-                        >
-                          <img
-                            src={picUrl}
-                            alt={`Clinic photo ${idx + 1}`}
-                            className="w-full h-full object-cover group-hover:scale-105 transition"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = 'none'
-                            }}
-                          />
-                          <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent" />
-                        </div>
+                        picUrl.startsWith('content://') ? (
+                          <div
+                            key={idx}
+                            title="Uploaded from older mobile build (local phone URI). Requires updated mobile build to upload to Supabase Storage."
+                            className="w-16 h-16 rounded-xl border border-amber-500/30 bg-amber-500/10 flex flex-col items-center justify-center p-1 text-center"
+                          >
+                            <ImageIcon className="w-4 h-4 text-amber-400 mb-0.5" />
+                            <span className="text-[9px] text-amber-300 font-semibold leading-none">Old Mobile URI</span>
+                          </div>
+                        ) : (
+                          <div
+                            key={idx}
+                            onClick={() => setSelectedPreviewImage(picUrl)}
+                            className="w-16 h-16 rounded-xl border border-slate-700 overflow-hidden bg-slate-900 cursor-pointer hover:border-indigo-500 transition group relative"
+                          >
+                            <img
+                              src={picUrl}
+                              alt={`Clinic photo ${idx + 1}`}
+                              className="w-full h-full object-cover group-hover:scale-105 transition"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = 'none'
+                              }}
+                            />
+                            <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent" />
+                          </div>
+                        )
                       ))}
                     </div>
                   </div>
