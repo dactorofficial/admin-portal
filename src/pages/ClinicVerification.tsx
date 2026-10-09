@@ -23,21 +23,36 @@ function parseClinicMeta(clinic: Clinic) {
     }
   }
 
+  // Handle postgres string array or json string format
+  if (typeof pictures === 'string') {
+    try {
+      if ((pictures as string).startsWith('[')) {
+        pictures = JSON.parse(pictures)
+      } else if ((pictures as string).startsWith('{')) {
+        pictures = (pictures as string).slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean)
+      } else {
+        pictures = [(pictures as string).trim()].filter(Boolean)
+      }
+    } catch (e) {
+      pictures = []
+    }
+  }
+
   // Resolve pictures: if relative storage path, convert to public Supabase Storage URL
   if (Array.isArray(pictures)) {
     pictures = pictures.map((pic: string) => {
-      if (pic && !pic.startsWith('http') && !pic.startsWith('content://')) {
-        const clean = pic.replace(/^\//, '')
-        const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
-        return data?.publicUrl || pic
-      }
-      return pic
-    })
+      if (!pic) return ''
+      if (pic.startsWith('content://')) return pic
+      if (pic.startsWith('http')) return pic
+      const clean = pic.replace(/^clinic_photos\//, '').replace(/^\//, '')
+      const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
+      return data?.publicUrl || pic
+    }).filter(Boolean)
   }
 
   // Resolve registration document URL
   if (regDoc && !regDoc.startsWith('http') && !regDoc.startsWith('content://')) {
-    const clean = regDoc.replace(/^\//, '')
+    const clean = regDoc.replace(/^clinic_photos\//, '').replace(/^\//, '')
     const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
     if (data?.publicUrl) regDoc = data.publicUrl
   }

@@ -74,8 +74,8 @@ export default function DoctorKYC() {
             if (picUrl.startsWith('content://')) {
               picUrl = '' // Local device URI cannot render on web browser
             } else if (!picUrl.startsWith('http')) {
-              const cleanPath = picUrl.replace(/^\//, '')
-              const buckets = ['doctor_photos', 'doctor-kyc', 'avatars']
+              const cleanPath = picUrl.replace(/^doctor_photos\//, '').replace(/^doctor-kyc\//, '').replace(/^\//, '')
+              const buckets = ['doctor_photos', 'doctor-kyc', 'clinic_photos']
               for (const bucket of buckets) {
                 const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(cleanPath)
                 if (urlData?.publicUrl) {
