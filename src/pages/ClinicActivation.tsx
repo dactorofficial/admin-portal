@@ -43,6 +43,7 @@ export default function ClinicActivation() {
   const [actNotes, setActNotes] = useState<string>('')
   const [actIsEnabled, setActIsEnabled] = useState<boolean>(true)
   const [savingActivation, setSavingActivation] = useState(false)
+  const [saveError, setSaveError] = useState<string>('')
 
   // Notify form state
   const [notifyTitle, setNotifyTitle] = useState('')
@@ -116,9 +117,10 @@ export default function ClinicActivation() {
   const openActivationModal = (clinic: Clinic) => {
     setActiveModalClinic(clinic)
     setModalType('activation')
+    setSaveError('')
     setActIsEnabled(clinic.is_activated !== false)
     setActPlan((clinic.activation_plan as any) || '1_month')
-    setActPaidAmount(clinic.activation_paid_amount ? clinic.activation_paid_amount.toString() : '1500')
+    setActPaidAmount(clinic.activation_paid_amount != null ? clinic.activation_paid_amount.toString() : '1500')
     setActNotes(clinic.activation_notes || '')
 
     const currentExp = clinic.activation_expires_at
@@ -140,8 +142,10 @@ export default function ClinicActivation() {
   const handleSaveActivation = async () => {
     if (!activeModalClinic) return
     setSavingActivation(true)
+    setSaveError('')
     try {
-      const finalExpiresAt = new Date(actExpiresAt + 'T23:59:59Z').toISOString()
+      const expDateStr = actExpiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+      const finalExpiresAt = new Date(expDateStr + 'T23:59:59Z').toISOString()
       const updates = {
         is_activated: actIsEnabled,
         activation_expires_at: finalExpiresAt,
@@ -151,13 +155,20 @@ export default function ClinicActivation() {
         updated_at: new Date().toISOString()
       }
 
-      await supabase.from('clinics').update(updates).eq('id', activeModalClinic.id)
+      const { error: updateError } = await supabase.from('clinics').update(updates).eq('id', activeModalClinic.id)
+
+      if (updateError) {
+        console.error('Error updating activation:', updateError)
+        setSaveError(updateError.message || 'Failed to update activation')
+        return
+      }
 
       setClinics(prev => prev.map(c => c.id === activeModalClinic.id ? { ...c, ...updates } : c))
       setModalType(null)
       setActiveModalClinic(null)
-    } catch (e) {
+    } catch (e: any) {
       console.error('Error updating activation:', e)
+      setSaveError(e?.message || 'Unexpected error while saving activation')
     } finally {
       setSavingActivation(false)
     }
@@ -218,7 +229,7 @@ export default function ClinicActivation() {
     if (!activeModalClinic) return
     setSavingClinic(true)
     try {
-      await supabase.from('clinics').update({
+      const { error: editError } = await supabase.from('clinics').update({
         name: editClinicData.name,
         type: editClinicData.type,
         address_text: editClinicData.address_text,
@@ -234,6 +245,12 @@ export default function ClinicActivation() {
         activation_expires_at: editClinicData.activation_expires_at,
         updated_at: new Date().toISOString()
       }).eq('id', activeModalClinic.id)
+
+      if (editError) {
+        console.error('Error editing clinic:', editError)
+        alert('Failed to save clinic changes: ' + editError.message)
+        return
+      }
 
       setClinics(prev => prev.map(c => c.id === activeModalClinic.id ? { ...c, ...editClinicData } as Clinic : c))
       setModalType(null)
@@ -307,7 +324,7 @@ export default function ClinicActivation() {
 
   // Counters
   const totalCount = clinics.length
-  const activeCount = clinics.filter(c => !c.is_archived && c.is_activated !== false && calculateDaysLeft(c.activation_expires_at) > 7).length
+  const activeCount = clinics.filter(c => !c.is_archived && c.is_activated !== false && calculateDaysLeft(c.activation_expires_at) > 0).length
   const expiringSoonCount = clinics.filter(c => !c.is_archived && c.is_activated !== false && calculateDaysLeft(c.activation_expires_at) <= 7 && calculateDaysLeft(c.activation_expires_at) > 0).length
   const expiredCount = clinics.filter(c => !c.is_archived && (c.is_activated === false || calculateDaysLeft(c.activation_expires_at) <= 0)).length
   const archivedCount = clinics.filter(c => c.is_archived === true).length
@@ -340,7 +357,7 @@ export default function ClinicActivation() {
             <CheckCircle2 className="w-3.5 h-3.5" /> Active Licenses
           </div>
           <div className="text-2xl font-black text-emerald-400 mt-1">{activeCount}</div>
-          <div className="text-[11px] text-slate-400 mt-1">&gt; 7 days validity remaining</div>
+          <div className="text-[11px] text-slate-400 mt-1">Valid & operational licenses</div>
         </div>
 
         <div className="bg-slate-800 border border-amber-500/30 p-4 rounded-2xl bg-amber-500/5">
@@ -587,6 +604,13 @@ export default function ClinicActivation() {
             </div>
 
             <div className="p-6 space-y-4">
+              {saveError && (
+                <div className="bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs p-3 rounded-xl flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0 text-rose-400" />
+                  <span>{saveError}</span>
+                </div>
+              )}
+
               {/* Active Toggle */}
               <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-700">
                 <div>
