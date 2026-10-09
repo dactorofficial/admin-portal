@@ -68,6 +68,20 @@ admin-panel/
   - Resolves clinic gallery photos from `clinic_photos`.
   - Gracefully handles older submissions that contain device-local `content://` URIs with a dedicated warning indicator rather than failing to render.
 
+### C. Medical Taxonomy Management (`MedicalTaxonomy.tsx`)
+- **Clinic Specialties Tab**:
+  - Full CRUD operations over `medical_specialties` table.
+  - Form attributes: Department Name, Category, Lucide Icon, Description, and Comma-Separated Search Keywords.
+  - Allows adding and editing specialty entries dynamically.
+- **Doctor Qualifications & Degrees Tab**:
+  - Full CRUD operations over `medical_qualifications` table.
+  - Form attributes: Degree Name (e.g. MBBS, MD, MS, DM, MCh, BDS), Qualification Level, Field of Study, Description.
+  - Controls the options available to doctors during registration and settings.
+- **Interactive Symptom Simulator**:
+  - Embedded live testing sandbox allowing administrators to test patient search queries (e.g. "eye", "teeth", "skin", "chest pain") and preview real-time matched specialties and keywords.
+- **Clinic Editor Integration (`ClinicEditor.tsx`)**:
+  - Added dynamic multi-select specialty chips under the Clinic Information section, enabling administrators to assign or edit multiple departments per clinic.
+
 ---
 
 ## 4. Build & Deployment Commands
