@@ -41,6 +41,7 @@ export interface Clinic {
   pan_number?: string
   manager_phone?: string
   pictures?: string[]
+  specialties?: string[]
   is_archived?: boolean
   archived_at?: string | null
   deletion_scheduled_at?: string | null
@@ -79,6 +80,7 @@ export interface Doctor {
   starting_practicing_year?: number
   profile_picture_url?: string
   specialty: string
+  specialties?: string[]
   education?: string
   nmc_license_number: string
   personal_mobile_number?: string
@@ -198,4 +200,27 @@ export interface DactorNotification {
   target_audience: TargetAudience
   is_read: boolean
   created_at: string
+}
+
+export interface MedicalSpecialty {
+  id: string
+  name: string
+  category: string
+  description?: string
+  search_keywords: string
+  icon?: string
+  is_active: boolean
+  created_at: string
+  updated_at?: string
+}
+
+export interface MedicalQualification {
+  id: string
+  degree_name: string
+  level: string
+  field_of_study: string
+  description?: string
+  is_active: boolean
+  created_at: string
+  updated_at?: string
 }

@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import type { Clinic, ClinicType, ClinicService } from '../lib/types'
+import type { Clinic, ClinicType, ClinicService, MedicalSpecialty } from '../lib/types'
 import { Building, Save, Plus, Trash2, Check } from 'lucide-react'
 
 export default function ClinicEditor() {
   const [clinics, setClinics] = useState<Clinic[]>([])
   const [selectedClinic, setSelectedClinic] = useState<Clinic | null>(null)
+  const [availableSpecialties, setAvailableSpecialties] = useState<MedicalSpecialty[]>([])
   const [services, setServices] = useState<ClinicService[]>([])
   const [newServiceName, setNewServiceName] = useState('')
   const [newServicePrice, setNewServicePrice] = useState('')
@@ -15,7 +16,17 @@ export default function ClinicEditor() {
 
   useEffect(() => {
     fetchClinics()
+    fetchAvailableSpecialties()
   }, [])
+
+  const fetchAvailableSpecialties = async () => {
+    try {
+      const { data } = await supabase.from('medical_specialties').select('*').eq('is_active', true).order('name')
+      if (data) setAvailableSpecialties(data as MedicalSpecialty[])
+    } catch (e) {
+      console.warn('Failed to fetch specialties:', e)
+    }
+  }
 
   const fetchClinics = async () => {
     try {
@@ -78,6 +89,7 @@ export default function ClinicEditor() {
         payment_api_key: selectedClinic.payment_api_key,
         payment_secret_key: selectedClinic.payment_secret_key,
         merchant_id: selectedClinic.merchant_id,
+        specialties: selectedClinic.specialties || [],
       }).eq('id', selectedClinic.id)
     } catch (e) {
       console.warn('Saved in local state:', e)
@@ -236,6 +248,47 @@ export default function ClinicEditor() {
                       <option value="diagnostic_lab">Diagnostic / Lab Center</option>
                     </select>
                   </div>
+                </div>
+
+                {/* Multi-Select Clinical Specialties */}
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                      Medical Specialties Offered (Select Multiple)
+                    </label>
+                    <span className="text-[11px] text-indigo-400 font-semibold">
+                      {(selectedClinic.specialties || []).length} Selected
+                    </span>
+                  </div>
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 max-h-44 overflow-y-auto flex flex-wrap gap-1.5">
+                    {availableSpecialties.map(spec => {
+                      const isSelected = (selectedClinic.specialties || []).includes(spec.name)
+                      return (
+                        <button
+                          key={spec.id}
+                          type="button"
+                          onClick={() => {
+                            const current = selectedClinic.specialties || []
+                            const updated = isSelected 
+                              ? current.filter(s => s !== spec.name)
+                              : [...current, spec.name]
+                            setSelectedClinic({ ...selectedClinic, specialties: updated })
+                          }}
+                          className={`text-xs px-2.5 py-1 rounded-lg border font-medium transition flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-indigo-600 border-indigo-500 text-white font-semibold shadow-sm'
+                              : 'bg-slate-800/80 border-slate-700 text-slate-300 hover:bg-slate-800'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 text-white" />}
+                          <span>{spec.name}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Patients searching for problems (e.g. eye, teeth, skin, heart) matching these specialties will discover this clinic.
+                  </p>
                 </div>
 
                 <div>

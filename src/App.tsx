@@ -7,7 +7,8 @@ import DoctorKYC from './pages/DoctorKYC'
 import ClinicEditor from './pages/ClinicEditor'
 import BroadcastNotification from './pages/BroadcastNotification'
 import ClinicActivation from './pages/ClinicActivation'
-import { LayoutDashboard, Building2, UserCog, Edit, Bell, LogOut, ShieldCheck, CreditCard } from 'lucide-react'
+import MedicalTaxonomy from './pages/MedicalTaxonomy'
+import { LayoutDashboard, Building2, UserCog, Edit, Bell, LogOut, ShieldCheck, CreditCard, Stethoscope } from 'lucide-react'
 
 function App() {
   const [session, setSession] = useState<any>(() => {
@@ -62,6 +63,7 @@ function App() {
       case '/clinics': return <ClinicVerification />
       case '/activation': return <ClinicActivation />
       case '/doctors': return <DoctorKYC />
+      case '/taxonomy': return <MedicalTaxonomy />
       case '/editor': return <ClinicEditor />
       case '/broadcast': return <BroadcastNotification />
       default: return <Dashboard onNavigate={navigate} />
@@ -121,6 +123,16 @@ function App() {
           >
             <UserCog className="w-4 h-4" />
             <span>Doctor KYC & License</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/taxonomy')}
+            className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              currentPath === '/taxonomy' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <Stethoscope className="w-4 h-4" />
+            <span>Medical Taxonomy</span>
           </button>
 
           <button
