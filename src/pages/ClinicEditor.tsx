@@ -1,7 +1,35 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Clinic, ClinicType, ClinicService, MedicalSpecialty } from '../lib/types'
-import { Building, Save, Plus, Trash2, Check } from 'lucide-react'
+import { Building, Save, Plus, Trash2, Check, Image as ImageIcon, FileText, ExternalLink, X } from 'lucide-react'
+
+function resolvePictures(clinic: Clinic): string[] {
+  let pics = clinic.pictures || []
+  if (clinic.description && clinic.description.trim().startsWith('{')) {
+    try {
+      const meta = JSON.parse(clinic.description)
+      if (meta.pictures && meta.pictures.length > 0) pics = meta.pictures
+    } catch (e) {}
+  }
+  if (typeof pics === 'string') {
+    try {
+      if ((pics as string).startsWith('[')) pics = JSON.parse(pics)
+      else if ((pics as string).startsWith('{')) pics = (pics as string).slice(1, -1).split(',').map(s => s.replace(/^"|"$/g, '').trim()).filter(Boolean)
+      else pics = [(pics as string).trim()].filter(Boolean)
+    } catch (e) {
+      pics = []
+    }
+  }
+  if (!Array.isArray(pics)) return []
+  return pics.map(p => {
+    if (!p) return ''
+    if (p.startsWith('http')) return p
+    if (p.startsWith('content://')) return p
+    const clean = p.replace(/^clinic_photos\//, '').replace(/^\//, '')
+    const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
+    return data?.publicUrl || p
+  }).filter(Boolean)
+}
 
 export default function ClinicEditor() {
   const [clinics, setClinics] = useState<Clinic[]>([])
@@ -13,6 +41,7 @@ export default function ClinicEditor() {
   const [newServiceDesc, setNewServiceDesc] = useState('')
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
+  const [previewImage, setPreviewImage] = useState<string | null>(null)
 
   useEffect(() => {
     fetchClinics()
@@ -464,6 +493,62 @@ export default function ClinicEditor() {
                   />
                 </div>
 
+                {/* Clinic Photos Gallery */}
+                {(() => {
+                  const pics = resolvePictures(selectedClinic)
+                  return (
+                    <div className="space-y-2 pt-1 border-t border-slate-700/60">
+                      <div className="flex items-center justify-between">
+                        <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-1.5">
+                          <ImageIcon className="w-4 h-4 text-indigo-400" />
+                          Clinic Picture Gallery ({pics.length})
+                        </label>
+                        {selectedClinic.registration_doc_url && (
+                          selectedClinic.registration_doc_url.startsWith('http') ? (
+                            <a
+                              href={selectedClinic.registration_doc_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1 font-semibold"
+                            >
+                              <FileText className="w-3.5 h-3.5" /> View Registration Doc <ExternalLink className="w-3 h-3" />
+                            </a>
+                          ) : (
+                            <span className="text-xs text-amber-400 flex items-center gap-1">
+                              <FileText className="w-3.5 h-3.5" /> Registration Doc Attached
+                            </span>
+                          )
+                        )}
+                      </div>
+                      {pics.length === 0 ? (
+                        <div className="text-xs text-slate-500 bg-slate-900/40 p-3 rounded-xl border border-slate-700/50">
+                          No clinic photos uploaded yet. When the clinic uploads pictures via their app, they appear here.
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap items-center gap-3">
+                          {pics.map((picUrl, idx) => (
+                            <div
+                              key={idx}
+                              onClick={() => setPreviewImage(picUrl)}
+                              className="w-20 h-20 rounded-xl border border-slate-700 overflow-hidden bg-slate-900 cursor-pointer hover:border-indigo-500 transition group relative"
+                            >
+                              <img
+                                src={picUrl}
+                                alt={`Clinic ${idx + 1}`}
+                                className="w-full h-full object-cover group-hover:scale-105 transition"
+                                onError={(e) => {
+                                  (e.target as HTMLElement).style.display = 'none'
+                                }}
+                              />
+                              <div className="absolute inset-0 bg-black/20 group-hover:bg-transparent" />
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
+
                 <div className="flex justify-end pt-2">
                   <button
                     type="submit"
@@ -564,6 +649,28 @@ export default function ClinicEditor() {
           </div>
         )}
       </div>
+      {/* Full-screen Photo Preview Modal */}
+      {previewImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
+          onClick={() => setPreviewImage(null)}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-300">Photo Preview</span>
+              <button
+                onClick={() => setPreviewImage(null)}
+                className="p-1 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center max-h-[80vh]">
+              <img src={previewImage} alt="Full preview" className="max-h-[75vh] max-w-full object-contain rounded-lg" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
