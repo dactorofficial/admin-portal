@@ -79,13 +79,21 @@ export default function ClinicVerification() {
 
   const updateStatus = async (id: string, status: VerificationStatus) => {
     try {
-      const { error } = await supabase.from('clinics').update({ verification_status: status }).eq('id', id)
+      const updates: any = { verification_status: status }
+      if (status === 'approved') {
+        const existing = clinics.find(c => c.id === id)
+        if (!existing?.activation_expires_at) {
+          updates.is_activated = true
+          updates.activation_expires_at = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      }
+      const { error } = await supabase.from('clinics').update(updates).eq('id', id)
       if (error) {
         console.error('Error updating status in Supabase:', error)
         alert(`Failed to update status in Supabase: ${error.message}`)
         return
       }
-      setClinics(prev => prev.map(c => c.id === id ? { ...c, verification_status: status } : c))
+      setClinics(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c))
     } catch (e: any) {
       console.warn('Update status error:', e)
       alert(`Error updating clinic status: ${e?.message || e}`)

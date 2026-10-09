@@ -65,7 +65,8 @@ export default function ClinicActivation() {
       const exp = new Date(expiresAt).getTime()
       const now = new Date().getTime()
       const diff = exp - now
-      return Math.ceil(diff / (1000 * 60 * 60 * 24))
+      const days = Math.ceil(diff / (1000 * 60 * 60 * 24))
+      return days > 0 ? days : 0
     } catch {
       return 0
     }
@@ -118,23 +119,24 @@ export default function ClinicActivation() {
     setActiveModalClinic(clinic)
     setModalType('activation')
     setSaveError('')
-    setActIsEnabled(clinic.is_activated !== false)
-    setActPlan((clinic.activation_plan as any) || '1_month')
-    setActPaidAmount(clinic.activation_paid_amount != null ? clinic.activation_paid_amount.toString() : '1500')
+    setActIsEnabled(true)
+    setActPlan('1_month')
+    setActPaidAmount('1500')
     setActNotes(clinic.activation_notes || '')
 
-    const currentExp = clinic.activation_expires_at
-      ? new Date(clinic.activation_expires_at).toISOString().slice(0, 10)
-      : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-    setActExpiresAt(currentExp)
+    // Auto-calculate new expiration date (+30 days added)
+    const hasValidFutureExpiry = clinic.activation_expires_at && new Date(clinic.activation_expires_at).getTime() > Date.now()
+    const baseDate = hasValidFutureExpiry ? new Date(clinic.activation_expires_at!) : new Date()
+    const defaultNewExp = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000)
+    setActExpiresAt(defaultNewExp.toISOString().slice(0, 10))
   }
 
   const handleApplyPresetDays = (days: number, planName: '1_month' | '12_month' | 'custom', price: string) => {
     setActPlan(planName)
     setActPaidAmount(price)
-    const baseDate = activeModalClinic?.activation_expires_at && new Date(activeModalClinic.activation_expires_at).getTime() > Date.now()
-      ? new Date(activeModalClinic.activation_expires_at)
-      : new Date()
+    setActIsEnabled(true)
+    const hasValidFutureExpiry = activeModalClinic?.activation_expires_at && new Date(activeModalClinic.activation_expires_at).getTime() > Date.now()
+    const baseDate = hasValidFutureExpiry ? new Date(activeModalClinic!.activation_expires_at!) : new Date()
     const newDate = new Date(baseDate.getTime() + days * 24 * 60 * 60 * 1000)
     setActExpiresAt(newDate.toISOString().slice(0, 10))
   }
@@ -146,13 +148,26 @@ export default function ClinicActivation() {
     try {
       const expDateStr = actExpiresAt || new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
       const finalExpiresAt = new Date(expDateStr + 'T23:59:59Z').toISOString()
-      const updates = {
+      const updates: any = {
         is_activated: actIsEnabled,
         activation_expires_at: finalExpiresAt,
         activation_plan: actPlan,
         activation_paid_amount: parseFloat(actPaidAmount) || 0,
         activation_notes: actNotes.trim(),
         updated_at: new Date().toISOString()
+      }
+
+      // Sync description JSON if it exists to maintain parity with legacy mobile clients
+      if (activeModalClinic.description && activeModalClinic.description.trim().startsWith('{')) {
+        try {
+          const meta = JSON.parse(activeModalClinic.description)
+          meta.is_activated = actIsEnabled
+          meta.activation_expires_at = finalExpiresAt
+          meta.activation_plan = actPlan
+          meta.activation_paid_amount = parseFloat(actPaidAmount) || 0
+          meta.activation_notes = actNotes.trim()
+          updates.description = JSON.stringify(meta)
+        } catch (ignored) {}
       }
 
       const { error: updateError } = await supabase.from('clinics').update(updates).eq('id', activeModalClinic.id)
@@ -166,6 +181,7 @@ export default function ClinicActivation() {
       setClinics(prev => prev.map(c => c.id === activeModalClinic.id ? { ...c, ...updates } : c))
       setModalType(null)
       setActiveModalClinic(null)
+      fetchClinicsAndStats()
     } catch (e: any) {
       console.error('Error updating activation:', e)
       setSaveError(e?.message || 'Unexpected error while saving activation')
@@ -611,8 +627,29 @@ export default function ClinicActivation() {
                 </div>
               )}
 
+              {/* Current Validity vs New Validity Overview */}
+              <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-700 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-400">Current Validity:</span>
+                  <span className="font-semibold text-slate-200">
+                    {activeModalClinic.activation_expires_at
+                      ? `${new Date(activeModalClinic.activation_expires_at).toLocaleDateString()} (${calculateDaysLeft(activeModalClinic.activation_expires_at)} days left)`
+                      : 'Expired / Not Activated (0 days)'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs pt-2 border-t border-slate-800">
+                  <span className="text-indigo-400 font-bold flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" /> New Expiry (After Saving):
+                  </span>
+                  <span className="font-bold text-emerald-400">
+                    {actExpiresAt ? new Date(actExpiresAt + 'T23:59:59Z').toLocaleDateString() : 'N/A'} 
+                    {' '}({calculateDaysLeft(actExpiresAt ? actExpiresAt + 'T23:59:59Z' : '')} days total)
+                  </span>
+                </div>
+              </div>
+
               {/* Active Toggle */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900 border border-slate-700">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/80 border border-slate-700">
                 <div>
                   <div className="text-xs font-bold text-white">License Activation Status</div>
                   <div className="text-[11px] text-slate-400">Controls whether clinic portal and patient bookings are unlocked</div>
@@ -625,41 +662,57 @@ export default function ClinicActivation() {
                     className="w-4 h-4 rounded bg-slate-800 text-indigo-600 focus:ring-indigo-500"
                   />
                   <span className={`text-xs font-bold ${actIsEnabled ? 'text-emerald-400' : 'text-rose-400'}`}>
-                    {actIsEnabled ? 'Active' : 'Disabled'}
+                    {actIsEnabled ? 'Active (Operational)' : 'Disabled / Suspended'}
                   </span>
                 </label>
               </div>
 
               {/* Quick Preset Packages */}
               <div>
-                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Choose Activation Package</label>
-                <div className="grid grid-cols-2 gap-3">
+                <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">
+                  Select Period to Add
+                </label>
+                <div className="grid grid-cols-3 gap-2.5">
                   <button
                     type="button"
                     onClick={() => handleApplyPresetDays(30, '1_month', '1500')}
-                    className={`p-3.5 rounded-xl border text-left transition ${
+                    className={`p-3 rounded-xl border text-left transition ${
                       actPlan === '1_month'
-                        ? 'border-indigo-500 bg-indigo-600/10 text-white'
+                        ? 'border-indigo-500 bg-indigo-600/15 text-white ring-1 ring-indigo-500'
                         : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600'
                     }`}
                   >
-                    <div className="font-bold text-sm">1 Month Plan</div>
-                    <div className="text-xs text-indigo-400 font-bold mt-0.5">Rs. 1,500 / 30 Days</div>
-                    <div className="text-[10px] text-slate-400 mt-1">Standard monthly OPD activation</div>
+                    <div className="font-bold text-xs">+30 Days</div>
+                    <div className="text-[11px] text-indigo-400 font-bold mt-0.5">Rs. 1,500</div>
+                    <div className="text-[10px] text-slate-400 mt-1">1 Month Plan</div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPresetDays(90, 'custom', '4500')}
+                    className={`p-3 rounded-xl border text-left transition ${
+                      actPlan === 'custom' && actPaidAmount === '4500'
+                        ? 'border-indigo-500 bg-indigo-600/15 text-white ring-1 ring-indigo-500'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600'
+                    }`}
+                  >
+                    <div className="font-bold text-xs">+90 Days</div>
+                    <div className="text-[11px] text-blue-400 font-bold mt-0.5">Rs. 4,500</div>
+                    <div className="text-[10px] text-slate-400 mt-1">3 Months Plan</div>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => handleApplyPresetDays(365, '12_month', '15000')}
-                    className={`p-3.5 rounded-xl border text-left transition ${
+                    className={`p-3 rounded-xl border text-left transition ${
                       actPlan === '12_month'
-                        ? 'border-emerald-500 bg-emerald-600/10 text-white'
+                        ? 'border-emerald-500 bg-emerald-600/15 text-white ring-1 ring-emerald-500'
                         : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600'
                     }`}
                   >
-                    <div className="font-bold text-sm">12 Month Plan</div>
-                    <div className="text-xs text-emerald-400 font-bold mt-0.5">Rs. 15,000 / 365 Days</div>
-                    <div className="text-[10px] text-slate-400 mt-1">Annual license (Save 2 months)</div>
+                    <div className="font-bold text-xs">+365 Days</div>
+                    <div className="text-[11px] text-emerald-400 font-bold mt-0.5">Rs. 15,000</div>
+                    <div className="text-[10px] text-slate-400 mt-1">1 Year Plan</div>
                   </button>
                 </div>
               </div>
@@ -667,7 +720,7 @@ export default function ClinicActivation() {
               {/* Expiry Date & Amount Paid */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Expiration Date</label>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Target Expiration Date</label>
                   <input
                     type="date"
                     value={actExpiresAt}
@@ -681,7 +734,7 @@ export default function ClinicActivation() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Paid Amount (NPR)</label>
+                  <label className="block text-xs font-semibold text-slate-300 uppercase tracking-wider mb-1">Fee Recorded (NPR)</label>
                   <input
                     type="number"
                     value={actPaidAmount}
