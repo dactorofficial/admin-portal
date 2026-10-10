@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Building2, UserCog, Activity, CheckCircle, Clock, ArrowRight } from 'lucide-react'
+import { Building2, UserCog, Activity, CheckCircle, Clock, ArrowRight, Trash2 } from 'lucide-react'
 
 interface DashboardProps {
   onNavigate?: (path: string) => void
@@ -14,6 +14,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     pendingDoctors: 0,
     totalAppointments: 0,
     totalServices: 0,
+    archivedClinics: 0,
   })
   const [loading, setLoading] = useState(true)
 
@@ -30,14 +31,16 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         { count: totalDoctors },
         { count: pendingDoctors },
         { count: totalAppointments },
-        { count: totalServices }
+        { count: totalServices },
+        { count: archivedClinics }
       ] = await Promise.all([
-        supabase.from('clinics').select('*', { count: 'exact', head: true }),
-        supabase.from('clinics').select('*', { count: 'exact', head: true }).eq('verification_status', 'pending'),
+        supabase.from('clinics').select('*', { count: 'exact', head: true }).or('is_archived.is.null,is_archived.eq.false'),
+        supabase.from('clinics').select('*', { count: 'exact', head: true }).eq('verification_status', 'pending').or('is_archived.is.null,is_archived.eq.false'),
         supabase.from('doctors').select('*', { count: 'exact', head: true }),
         supabase.from('doctors').select('*', { count: 'exact', head: true }).eq('kyc_status', 'pending'),
         supabase.from('appointments').select('*', { count: 'exact', head: true }),
         supabase.from('clinic_services').select('*', { count: 'exact', head: true }),
+        supabase.from('clinics').select('*', { count: 'exact', head: true }).eq('is_archived', true),
       ])
 
       setStats({
@@ -47,6 +50,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         pendingDoctors: pendingDoctors ?? 0,
         totalAppointments: totalAppointments ?? 0,
         totalServices: totalServices ?? 0,
+        archivedClinics: archivedClinics ?? 0,
       })
     } catch (e) {
       console.error('Error fetching dashboard stats:', e)
@@ -57,6 +61,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         pendingDoctors: 0,
         totalAppointments: 0,
         totalServices: 0,
+        archivedClinics: 0,
       })
     } finally {
       setLoading(false)
@@ -86,11 +91,22 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             <span className="text-amber-400 flex items-center gap-1 font-medium">
               <Clock className="w-3.5 h-3.5" /> {stats.pendingClinics} Pending Verification
             </span>
-            {onNavigate && (
-              <button onClick={() => onNavigate('/clinics')} className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1">
-                Review <ArrowRight className="w-3.5 h-3.5" />
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {stats.archivedClinics > 0 && onNavigate && (
+                <button
+                  onClick={() => onNavigate('/recycle-bin')}
+                  className="text-rose-400 hover:text-rose-300 font-semibold flex items-center gap-1"
+                  title="View Recycle Bin"
+                >
+                  <Trash2 className="w-3 h-3" /> {stats.archivedClinics} Archived
+                </button>
+              )}
+              {onNavigate && (
+                <button onClick={() => onNavigate('/clinics')} className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1">
+                  Review <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

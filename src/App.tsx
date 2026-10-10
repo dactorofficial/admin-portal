@@ -8,9 +8,11 @@ import ClinicEditor from './pages/ClinicEditor'
 import BroadcastNotification from './pages/BroadcastNotification'
 import ClinicActivation from './pages/ClinicActivation'
 import MedicalTaxonomy from './pages/MedicalTaxonomy'
-import { LayoutDashboard, Building2, UserCog, Edit, Bell, LogOut, ShieldCheck, CreditCard, Stethoscope } from 'lucide-react'
+import RecycleBin from './pages/RecycleBin'
+import { LayoutDashboard, Building2, UserCog, Edit, Bell, LogOut, ShieldCheck, CreditCard, Stethoscope, Trash2 } from 'lucide-react'
 
 function App() {
+  const [archivedCount, setArchivedCount] = useState<number>(0)
   const [session, setSession] = useState<any>(() => {
     try {
       const saved = localStorage.getItem('dactor_admin_session')
@@ -36,6 +38,23 @@ function App() {
 
     return () => subscription.unsubscribe()
   }, [])
+
+  useEffect(() => {
+    const fetchArchivedCount = async () => {
+      try {
+        const { count } = await supabase
+          .from('clinics')
+          .select('*', { count: 'exact', head: true })
+          .eq('is_archived', true)
+        if (count !== null) setArchivedCount(count)
+      } catch (e) {
+        console.warn('Error fetching archived count:', e)
+      }
+    }
+    fetchArchivedCount()
+    const interval = setInterval(fetchArchivedCount, 12000)
+    return () => clearInterval(interval)
+  }, [currentPath])
 
   const handleSignOut = async () => {
     localStorage.removeItem('dactor_admin_session')
@@ -66,6 +85,7 @@ function App() {
       case '/taxonomy': return <MedicalTaxonomy />
       case '/editor': return <ClinicEditor />
       case '/broadcast': return <BroadcastNotification />
+      case '/recycle-bin': return <RecycleBin />
       default: return <Dashboard onNavigate={navigate} />
     }
   }
@@ -153,6 +173,23 @@ function App() {
           >
             <Bell className="w-4 h-4" />
             <span>Broadcast Alerts</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/recycle-bin')}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              currentPath === '/recycle-bin' ? 'bg-rose-600 text-white shadow-md shadow-rose-600/20' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+              <Trash2 className="w-4 h-4" />
+              <span>Recycle Bin</span>
+            </div>
+            {archivedCount > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                {archivedCount}
+              </span>
+            )}
           </button>
         </nav>
 

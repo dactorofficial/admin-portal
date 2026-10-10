@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Clinic, ClinicType, VerificationStatus } from '../lib/types'
-import { CheckCircle2, XCircle, MapPin, Phone, Mail, Building, RefreshCw, FileText, Image as ImageIcon, Shield, AlertCircle } from 'lucide-react'
+import { CheckCircle2, XCircle, MapPin, Phone, Mail, Building, RefreshCw, FileText, Image as ImageIcon, Shield, AlertCircle, Trash2 } from 'lucide-react'
 
 function parseClinicMeta(clinic: Clinic) {
   let pan = clinic.pan_number || ''
@@ -146,7 +146,29 @@ export default function ClinicVerification() {
     }
   }
 
+  const archiveClinic = async (id: string, name: string) => {
+    if (!window.confirm(`Move "${name}" to the Recycle Bin? It will be archived for 30 days before permanent deletion.`)) return
+    try {
+      const scheduledDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      const updates = {
+        is_archived: true,
+        archived_at: new Date().toISOString(),
+        deletion_scheduled_at: scheduledDate,
+        updated_at: new Date().toISOString()
+      }
+      const { error } = await supabase.from('clinics').update(updates).eq('id', id)
+      if (error) {
+        alert(`Failed to archive clinic: ${error.message}`)
+      } else {
+        setClinics(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c))
+      }
+    } catch (e: any) {
+      alert(`Error archiving clinic: ${e?.message || e}`)
+    }
+  }
+
   const filteredClinics = clinics.filter(c => {
+    if (c.is_archived) return false
     if (filter === 'all') return true
     return c.verification_status === filter
   })
@@ -394,6 +416,17 @@ export default function ClinicVerification() {
                       </button>
                     </div>
                   )}
+                </div>
+
+                <div className="flex items-center justify-end w-full pt-1">
+                  <button
+                    onClick={() => archiveClinic(clinic.id, clinic.name)}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 px-2 py-1 rounded-lg transition"
+                    title="Archive clinic to Recycle Bin"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Move to Recycle Bin</span>
+                  </button>
                 </div>
               </div>
             </div>

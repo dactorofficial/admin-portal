@@ -42,6 +42,7 @@ export default function ClinicEditor() {
   const [saving, setSaving] = useState(false)
   const [saveSuccess, setSaveSuccess] = useState(false)
   const [previewImage, setPreviewImage] = useState<string | null>(null)
+  const [showArchived, setShowArchived] = useState(false)
 
   useEffect(() => {
     fetchClinics()
@@ -62,8 +63,10 @@ export default function ClinicEditor() {
       const { data, error } = await supabase.from('clinics').select('*').order('name')
       if (!error && data && data.length > 0) {
         setClinics(data as Clinic[])
-        setSelectedClinic(data[0] as Clinic)
-        fetchServices(data[0].id)
+        const activeClinics = (data as Clinic[]).filter(c => !c.is_archived)
+        const initialClinic = activeClinics[0] || (data[0] as Clinic)
+        setSelectedClinic(initialClinic)
+        fetchServices(initialClinic.id)
       } else {
         setClinics([])
         setSelectedClinic(null)
@@ -179,9 +182,24 @@ export default function ClinicEditor() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Clinic Selector Column */}
         <div className="lg:col-span-4 bg-slate-800 border border-slate-700 p-4 rounded-2xl h-fit">
-          <h2 className="text-sm font-bold text-white uppercase tracking-wider mb-3 px-2">Select Clinic to Edit</h2>
-          <div className="space-y-2">
-            {clinics.map(clinic => (
+          <div className="flex items-center justify-between mb-3 px-2">
+            <h2 className="text-sm font-bold text-white uppercase tracking-wider">Select Clinic</h2>
+            {clinics.some(c => c.is_archived) && (
+              <button
+                type="button"
+                onClick={() => setShowArchived(prev => !prev)}
+                className={`text-[10px] font-semibold px-2 py-0.5 rounded-lg border transition ${
+                  showArchived
+                    ? 'bg-rose-500/20 text-rose-300 border-rose-500/30'
+                    : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-slate-300'
+                }`}
+              >
+                {showArchived ? 'Hide Archived' : `Show Archived (${clinics.filter(c => c.is_archived).length})`}
+              </button>
+            )}
+          </div>
+          <div className="space-y-2 max-h-[72vh] overflow-y-auto pr-1">
+            {clinics.filter(c => showArchived ? true : !c.is_archived).map(clinic => (
               <button
                 key={clinic.id}
                 onClick={() => handleSelectClinic(clinic)}
@@ -192,7 +210,14 @@ export default function ClinicEditor() {
                 }`}
               >
                 <div>
-                  <div className="font-semibold text-sm">{clinic.name}</div>
+                  <div className="font-semibold text-sm flex items-center gap-1.5">
+                    {clinic.name}
+                    {clinic.is_archived && (
+                      <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                        ARCHIVED
+                      </span>
+                    )}
+                  </div>
                   <div className={`text-xs ${selectedClinic?.id === clinic.id ? 'text-indigo-200' : 'text-slate-400'} truncate max-w-[200px]`}>
                     {clinic.address_text}
                   </div>
@@ -222,11 +247,35 @@ export default function ClinicEditor() {
                     <p className="text-xs text-slate-400">ID: {selectedClinic.id}</p>
                   </div>
                 </div>
-                {saveSuccess && (
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
-                    <Check className="w-4 h-4" /> Changes Saved
-                  </span>
-                )}
+                <div className="flex items-center gap-2">
+                  {saveSuccess && (
+                    <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold bg-emerald-500/10 px-3 py-1.5 rounded-xl border border-emerald-500/20">
+                      <Check className="w-4 h-4" /> Changes Saved
+                    </span>
+                  )}
+                  {!selectedClinic.is_archived && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (!window.confirm(`Move "${selectedClinic.name}" to the Recycle Bin? It will be held for 30 days before permanent deletion.`)) return
+                        const scheduledDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+                        const updates = {
+                          is_archived: true,
+                          archived_at: new Date().toISOString(),
+                          deletion_scheduled_at: scheduledDate,
+                          updated_at: new Date().toISOString()
+                        }
+                        await supabase.from('clinics').update(updates).eq('id', selectedClinic.id)
+                        setSelectedClinic({ ...selectedClinic, ...updates })
+                        setClinics(prev => prev.map(c => c.id === selectedClinic.id ? { ...c, ...updates } : c))
+                      }}
+                      className="flex items-center gap-1.5 text-xs text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 px-3 py-1.5 rounded-xl border border-rose-500/20 transition"
+                      title="Archive clinic to Recycle Bin"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Move to Recycle Bin
+                    </button>
+                  )}
+                </div>
               </div>
 
               {selectedClinic.is_archived && (
