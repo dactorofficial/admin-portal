@@ -27,6 +27,7 @@ import {
   EyeOff,
   CheckCircle2,
   AlertCircle,
+  MapPin,
 } from 'lucide-react'
 
 function App() {
@@ -171,7 +172,8 @@ function App() {
       case '/clinics': return <ClinicVerification />
       case '/activation': return <ClinicActivation />
       case '/doctors': return <DoctorKYC />
-      case '/taxonomy': return <MedicalTaxonomy />
+      case '/taxonomy': return <MedicalTaxonomy initialTab="specialties" />
+      case '/locations': return <MedicalTaxonomy initialTab="locations" />
       case '/editor': return <ClinicEditor />
       case '/broadcast': return <BroadcastNotification />
       case '/recycle-bin': return <RecycleBin />
@@ -244,6 +246,16 @@ function App() {
           >
             <Stethoscope className="w-4 h-4" />
             <span>Medical Taxonomy</span>
+          </button>
+
+          <button
+            onClick={() => navigate('/locations')}
+            className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              currentPath === '/locations' ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <MapPin className="w-4 h-4" />
+            <span>Patient App Locations</span>
           </button>
 
           <button

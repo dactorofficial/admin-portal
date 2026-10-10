@@ -27,6 +27,8 @@ import {
   Leaf,
   ShieldAlert,
   Scale,
+  MapPin,
+  Navigation,
   X
 } from 'lucide-react'
 
@@ -51,9 +53,13 @@ const renderSpecialtyIcon = (iconName?: string) => {
   }
 }
 
-export default function MedicalTaxonomy() {
-  const [activeTab, setActiveTab] = useState<'specialties' | 'qualifications'>('specialties')
+export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initialTab?: 'specialties' | 'qualifications' | 'locations' }) {
+  const [activeTab, setActiveTab] = useState<'specialties' | 'qualifications' | 'locations'>(initialTab)
   
+  useEffect(() => {
+    setActiveTab(initialTab)
+  }, [initialTab])
+
   // Data state
   const [specialties, setSpecialties] = useState<MedicalSpecialty[]>([])
   const [qualifications, setQualifications] = useState<MedicalQualification[]>([])
@@ -86,6 +92,16 @@ export default function MedicalTaxonomy() {
     level: 'Postgraduate',
     field_of_study: 'Medicine',
     description: '',
+    is_active: true
+  })
+
+  // Location Option Modal (Patient App Top Location Selector)
+  const [showLocationModal, setShowLocationModal] = useState(false)
+  const [editingLocation, setEditingLocation] = useState<MedicalQualification | null>(null)
+  const [locationForm, setLocationForm] = useState({
+    city_name: '',
+    coordinates: '27.7172, 85.3240',
+    aliases: '',
     is_active: true
   })
 
@@ -318,9 +334,95 @@ export default function MedicalTaxonomy() {
     }
   }
 
+  // Location Option Operations (Patient App Top Location Selector)
+  const openAddLocation = () => {
+    setEditingLocation(null)
+    setLocationForm({
+      city_name: '',
+      coordinates: '27.7172, 85.3240',
+      aliases: '',
+      is_active: true
+    })
+    setShowLocationModal(true)
+  }
+
+  const openEditLocation = (loc: MedicalQualification) => {
+    setEditingLocation(loc)
+    setLocationForm({
+      city_name: loc.degree_name,
+      coordinates: loc.field_of_study || '27.7172, 85.3240',
+      aliases: loc.description || loc.degree_name.toLowerCase(),
+      is_active: loc.is_active
+    })
+    setShowLocationModal(true)
+  }
+
+  const handleSaveLocation = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const cleanCity = locationForm.city_name.trim()
+    if (!cleanCity) {
+      showNotification('Location / City name is required.', true)
+      return
+    }
+    const cleanAliases = locationForm.aliases.trim() || cleanCity.toLowerCase()
+    const cleanCoords = locationForm.coordinates.trim() || '27.7172, 85.3240'
+
+    try {
+      if (editingLocation) {
+        const { error } = await supabase
+          .from('medical_qualifications')
+          .update({
+            degree_name: cleanCity,
+            level: 'LOCATION_OPTION',
+            field_of_study: cleanCoords,
+            description: cleanAliases,
+            is_active: locationForm.is_active,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', editingLocation.id)
+
+        if (error) throw error
+        showNotification(`Location option "${cleanCity}" updated for Patient App`)
+      } else {
+        const { error } = await supabase
+          .from('medical_qualifications')
+          .insert([{
+            degree_name: cleanCity,
+            level: 'LOCATION_OPTION',
+            field_of_study: cleanCoords,
+            description: cleanAliases,
+            is_active: locationForm.is_active
+          }])
+
+        if (error) throw error
+        showNotification(`New location option "${cleanCity}" added to Patient App`)
+      }
+
+      setShowLocationModal(false)
+      fetchTaxonomyData()
+    } catch (err: any) {
+      showNotification(err.message || 'Error saving location option', true)
+    }
+  }
+
+  const handleDeleteLocation = async (id: string, name: string) => {
+    if (!confirm(`Are you sure you want to remove location "${name}" from the Patient App selector?`)) return
+    try {
+      const { error } = await supabase.from('medical_qualifications').delete().eq('id', id)
+      if (error) throw error
+      showNotification(`Removed location option "${name}"`)
+      fetchTaxonomyData()
+    } catch (err: any) {
+      showNotification(err.message || 'Error deleting location option', true)
+    }
+  }
+
   // Filtering
+  const doctorDegrees = qualifications.filter(q => q.level !== 'LOCATION_OPTION')
+  const locationOptions = qualifications.filter(q => q.level === 'LOCATION_OPTION')
+
   const categories = Array.from(new Set(specialties.map(s => s.category || 'Specialized Care'))).filter(Boolean)
-  const levels = Array.from(new Set(qualifications.map(q => q.level || 'Postgraduate'))).filter(Boolean)
+  const levels = Array.from(new Set(doctorDegrees.map(q => q.level || 'Postgraduate'))).filter(Boolean)
 
   const filteredSpecialties = specialties.filter(spec => {
     const q = searchQuery.toLowerCase().trim()
@@ -332,7 +434,7 @@ export default function MedicalTaxonomy() {
     return matchesSearch && matchesCat
   })
 
-  const filteredQualifications = qualifications.filter(qual => {
+  const filteredQualifications = doctorDegrees.filter(qual => {
     const q = searchQuery.toLowerCase().trim()
     const matchesSearch = !q || 
       qual.degree_name.toLowerCase().includes(q) ||
@@ -340,6 +442,14 @@ export default function MedicalTaxonomy() {
       (qual.description && qual.description.toLowerCase().includes(q))
     const matchesLevel = selectedLevel === 'all' || qual.level === selectedLevel
     return matchesSearch && matchesLevel
+  })
+
+  const filteredLocations = locationOptions.filter(loc => {
+    const q = searchQuery.toLowerCase().trim()
+    return !q ||
+      loc.degree_name.toLowerCase().includes(q) ||
+      (loc.description && loc.description.toLowerCase().includes(q)) ||
+      (loc.field_of_study && loc.field_of_study.toLowerCase().includes(q))
   })
 
   // Simulated symptom match for admin feedback
@@ -355,12 +465,16 @@ export default function MedicalTaxonomy() {
         <div>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <Stethoscope className="w-5 h-5" />
+              {activeTab === 'locations' ? <MapPin className="w-5 h-5" /> : <Stethoscope className="w-5 h-5" />}
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-white tracking-tight">Medical Taxonomy & Master Registry</h1>
+              <h1 className="text-2xl font-bold text-white tracking-tight">
+                {activeTab === 'locations' ? 'Patient App Locations & Cities' : 'Medical Taxonomy & Master Registry'}
+              </h1>
               <p className="text-xs text-slate-400">
-                Clinic types, symptom search keywords, and doctor qualifications synced across Android and Admin apps.
+                {activeTab === 'locations'
+                  ? 'Manage the location dropdown options shown at the top of the Patient App when viewing the clinic list.'
+                  : 'Clinic types, symptom search keywords, doctor qualifications, and patient app locations synced in real time.'}
               </p>
             </div>
           </div>
@@ -384,13 +498,21 @@ export default function MedicalTaxonomy() {
               <Plus className="w-4 h-4" />
               <span>Add Clinic Specialty</span>
             </button>
-          ) : (
+          ) : activeTab === 'qualifications' ? (
             <button
               onClick={openAddQualification}
               className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-indigo-600/30 transition"
             >
               <Plus className="w-4 h-4" />
               <span>Add Doctor Degree</span>
+            </button>
+          ) : (
+            <button
+              onClick={openAddLocation}
+              className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-emerald-600/30 transition"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Location Option</span>
             </button>
           )}
         </div>
@@ -411,49 +533,51 @@ export default function MedicalTaxonomy() {
       )}
 
       {/* Interactive Symptom Simulator Card */}
-      <div className="bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-2xl p-4 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
-              <Sparkles className="w-4 h-4" />
+      {activeTab !== 'locations' && (
+        <div className="bg-gradient-to-r from-slate-900 to-indigo-950/40 border border-indigo-500/30 rounded-2xl p-4 shadow-sm">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <Sparkles className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-xs font-bold text-white uppercase tracking-wider">Patient Symptom Search Simulator</div>
+                <div className="text-[11px] text-slate-400">Test how patient search terms (e.g. &quot;eye&quot;, &quot;teeth&quot;, &quot;skin&quot;, &quot;heart attack&quot;) match medical specialties</div>
+              </div>
             </div>
-            <div>
-              <div className="text-xs font-bold text-white uppercase tracking-wider">Patient Symptom Search Simulator</div>
-              <div className="text-[11px] text-slate-400">Test how patient search terms (e.g. &quot;eye&quot;, &quot;teeth&quot;, &quot;skin&quot;, &quot;heart attack&quot;) match medical specialties</div>
+            <div className="w-full md:w-80 relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                value={simQuery}
+                onChange={e => setSimQuery(e.target.value)}
+                placeholder="Try: eye, tooth, fever, knee, rash..."
+                className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
+              />
             </div>
           </div>
-          <div className="w-full md:w-80 relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              value={simQuery}
-              onChange={e => setSimQuery(e.target.value)}
-              placeholder="Try: eye, tooth, fever, knee, rash..."
-              className="w-full bg-slate-950 border border-slate-700/80 rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
-            />
-          </div>
-        </div>
 
-        {simQuery.trim() && (
-          <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-2">
-            <span className="text-[11px] text-slate-400 font-medium">Matching Specialties:</span>
-            {simulatedMatches.length > 0 ? (
-              simulatedMatches.map(m => (
-                <span key={m.id} className="inline-flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-2.5 py-1 rounded-lg">
-                  <Check className="w-3 h-3 text-indigo-400" />
-                  {m.name}
-                  <span className="text-[9px] text-indigo-300/70">({m.category})</span>
-                </span>
-              ))
-            ) : (
-              <span className="text-[11px] text-rose-400 italic">No specialty match for &quot;{simQuery}&quot;. Add this symptom to the keywords of an appropriate specialty!</span>
-            )}
-          </div>
-        )}
-      </div>
+          {simQuery.trim() && (
+            <div className="mt-3 pt-3 border-t border-slate-800 flex flex-wrap items-center gap-2">
+              <span className="text-[11px] text-slate-400 font-medium">Matching Specialties:</span>
+              {simulatedMatches.length > 0 ? (
+                simulatedMatches.map(m => (
+                  <span key={m.id} className="inline-flex items-center gap-1.5 bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 text-[11px] font-semibold px-2.5 py-1 rounded-lg">
+                    <Check className="w-3 h-3 text-indigo-400" />
+                    {m.name}
+                    <span className="text-[9px] text-indigo-300/70">({m.category})</span>
+                  </span>
+                ))
+              ) : (
+                <span className="text-[11px] text-rose-400 italic">No specialty match for &quot;{simQuery}&quot;. Add this symptom to the keywords of an appropriate specialty!</span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
-      <div className="flex border-b border-slate-800">
+      <div className="flex flex-wrap border-b border-slate-800">
         <button
           onClick={() => { setActiveTab('specialties'); setSearchQuery('') }}
           className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition ${
@@ -480,7 +604,22 @@ export default function MedicalTaxonomy() {
           <GraduationCap className="w-4 h-4" />
           <span>Doctor Degrees & Qualifications</span>
           <span className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-indigo-500/20 text-indigo-300 font-bold">
-            {qualifications.length}
+            {doctorDegrees.length}
+          </span>
+        </button>
+
+        <button
+          onClick={() => { setActiveTab('locations'); setSearchQuery('') }}
+          className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition ${
+            activeTab === 'locations'
+              ? 'border-emerald-500 text-white'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <MapPin className="w-4 h-4 text-emerald-400" />
+          <span>Patient App Locations</span>
+          <span className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
+            {locationOptions.length}
           </span>
         </button>
       </div>
@@ -493,7 +632,13 @@ export default function MedicalTaxonomy() {
             type="text"
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            placeholder={activeTab === 'specialties' ? 'Filter by specialty name, keyword...' : 'Filter by degree name, field...'}
+            placeholder={
+              activeTab === 'specialties'
+                ? 'Filter by specialty name, keyword...'
+                : activeTab === 'qualifications'
+                ? 'Filter by degree name, field...'
+                : 'Filter by city name, district alias...'
+            }
             className="w-full bg-slate-800 border border-slate-700 rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-indigo-500"
           />
         </div>
@@ -512,7 +657,7 @@ export default function MedicalTaxonomy() {
               ))}
             </select>
           </div>
-        ) : (
+        ) : activeTab === 'qualifications' ? (
           <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
             <span className="text-xs text-slate-400 font-medium shrink-0">Level:</span>
             <select
@@ -520,11 +665,16 @@ export default function MedicalTaxonomy() {
               onChange={e => setSelectedLevel(e.target.value)}
               className="bg-slate-800 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 focus:outline-none focus:border-indigo-500"
             >
-              <option value="all">All Degree Levels ({qualifications.length})</option>
+              <option value="all">All Degree Levels ({doctorDegrees.length})</option>
               {levels.map(l => (
                 <option key={l} value={l}>{l}</option>
               ))}
             </select>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <Navigation className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Active in Patient App Dropdown: <strong className="text-white">All Nepal + {locationOptions.filter(l => l.is_active).length} Cities</strong></span>
           </div>
         )}
       </div>
@@ -703,6 +853,142 @@ export default function MedicalTaxonomy() {
               No doctor qualifications found matching your filter.
             </div>
           )}
+        </div>
+      )}
+
+      {/* Main Content: Tab 3 (Patient App Locations) */}
+      {activeTab === 'locations' && (
+        <div className="space-y-4">
+          {/* Live Patient App Top Location Selector Preview */}
+          <div className="bg-gradient-to-r from-slate-900 to-emerald-950/30 border border-emerald-500/30 rounded-2xl p-4 shadow-sm">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-white uppercase tracking-wider">
+                    Live Patient App Top Location Selector Preview
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    These active options appear in the location selector at the top of the Patient App when viewing the clinic list.
+                  </div>
+                </div>
+              </div>
+              <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-lg">
+                Real-Time Sync Active
+              </span>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-800/80">
+              <span className="inline-flex items-center gap-1.5 bg-indigo-600/20 border border-indigo-500/40 text-indigo-200 text-xs font-bold px-3 py-1.5 rounded-xl">
+                <Navigation className="w-3 h-3 text-indigo-400" />
+                Use Current Location (GPS)
+              </span>
+              <span className="inline-flex items-center gap-1.5 bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm">
+                <MapPin className="w-3 h-3" />
+                All Nepal (Default)
+              </span>
+              {locationOptions.filter(l => l.is_active).map(loc => (
+                <button
+                  key={loc.id}
+                  onClick={() => openEditLocation(loc)}
+                  title="Click to edit this location option"
+                  className="inline-flex items-center gap-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold px-3 py-1.5 rounded-xl transition"
+                >
+                  <MapPin className="w-3 h-3 text-emerald-400" />
+                  <span>{loc.degree_name}</span>
+                  <Edit2 className="w-3 h-3 text-slate-400 ml-0.5" />
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Locations Table */}
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl overflow-hidden shadow-sm">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-300">
+                <thead className="bg-slate-950/70 border-b border-slate-700 text-slate-400 uppercase tracking-wider font-semibold text-[11px]">
+                  <tr>
+                    <th className="py-3 px-4">Location / City Name</th>
+                    <th className="py-3 px-4">Matched District & Area Keywords</th>
+                    <th className="py-3 px-4">GPS Center Coordinates</th>
+                    <th className="py-3 px-4">Patient App Visibility</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/60">
+                  {filteredLocations.map(loc => (
+                    <tr key={loc.id} className="hover:bg-slate-750/50 transition">
+                      <td className="py-3.5 px-4 font-bold text-white">
+                        <div className="flex items-center gap-2">
+                          <div className="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0">
+                            <MapPin className="w-3.5 h-3.5" />
+                          </div>
+                          <span>{loc.degree_name}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <div className="flex flex-wrap gap-1 max-w-md">
+                          {(loc.description || loc.degree_name.toLowerCase()).split(',').map((alias, i) => {
+                            const trimmed = alias.trim()
+                            if (!trimmed) return null
+                            return (
+                              <span
+                                key={i}
+                                className="text-[10px] px-2 py-0.5 rounded-md bg-slate-900 text-slate-300 border border-slate-700/70"
+                              >
+                                {trimmed}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-400">
+                        {loc.field_of_study || '27.7172, 85.3240'}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        <button
+                          onClick={() => toggleQualActive(loc)}
+                          className={`text-[10px] font-bold px-2.5 py-1 rounded-full transition ${
+                            loc.is_active
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20'
+                              : 'bg-slate-700 text-slate-400 hover:bg-slate-600'
+                          }`}
+                        >
+                          {loc.is_active ? 'Shown in App' : 'Hidden'}
+                        </button>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <div className="flex items-center justify-end gap-2">
+                          <button
+                            onClick={() => openEditLocation(loc)}
+                            className="px-2.5 py-1 bg-slate-700/70 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={() => handleDeleteLocation(loc.id, loc.degree_name)}
+                            className="p-1.5 hover:bg-rose-500/10 text-rose-400 rounded-lg transition"
+                            title="Delete Location"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {filteredLocations.length === 0 && !loading && (
+              <div className="text-center py-12 text-slate-400">
+                No location options found matching your filter. Click &quot;Add Location Option&quot; to add one.
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -927,6 +1213,109 @@ export default function MedicalTaxonomy() {
                   className="px-4 py-2 rounded-xl text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white transition shadow-md shadow-indigo-600/30"
                 >
                   {editingQual ? 'Update Degree' : 'Save Degree'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Location Option Add/Edit Modal */}
+      {showLocationModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl w-full max-w-lg shadow-2xl p-6 relative">
+            <button
+              onClick={() => setShowLocationModal(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-white"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="flex items-center gap-2.5 mb-1">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <MapPin className="w-4 h-4" />
+              </div>
+              <h2 className="text-lg font-bold text-white">
+                {editingLocation ? 'Edit Patient App Location Option' : 'Add Patient App Location Option'}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Configure the location option shown at the top of the Patient App when viewing the clinic list.
+            </p>
+
+            <form onSubmit={handleSaveLocation} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Location / City Name * (Shown in Top Selector)
+                </label>
+                <input
+                  type="text"
+                  value={locationForm.city_name}
+                  onChange={e => setLocationForm({ ...locationForm, city_name: e.target.value })}
+                  placeholder="e.g. Kathmandu, Pokhara, Janakpur, Itahari, Birtamode..."
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  District & Area Search Keywords (Comma-separated)
+                </label>
+                <textarea
+                  value={locationForm.aliases}
+                  onChange={e => setLocationForm({ ...locationForm, aliases: e.target.value })}
+                  placeholder="e.g. kathmandu, ktm, bagmati, thamel, baneshwor, chabahil, maharajgunj, kalanki"
+                  rows={3}
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  When a patient selects this location, clinics whose address or name contains any of these keywords will be matched.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  GPS Center Coordinates (Latitude, Longitude)
+                </label>
+                <input
+                  type="text"
+                  value={locationForm.coordinates}
+                  onChange={e => setLocationForm({ ...locationForm, coordinates: e.target.value })}
+                  placeholder="e.g. 27.7172, 85.3240"
+                  className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs font-mono focus:outline-none focus:border-emerald-500"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">
+                  Used when the patient taps &quot;Use Current Location (GPS)&quot; to determine the closest city in Nepal.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="locActive"
+                  checked={locationForm.is_active}
+                  onChange={e => setLocationForm({ ...locationForm, is_active: e.target.checked })}
+                  className="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
+                />
+                <label htmlFor="locActive" className="text-xs text-slate-300">
+                  Show this location in the Patient App top location selector
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setShowLocationModal(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:bg-slate-800 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-md shadow-emerald-600/30"
+                >
+                  {editingLocation ? 'Update Location Option' : 'Save Location Option'}
                 </button>
               </div>
             </form>
