@@ -418,7 +418,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
   }
 
   // Filtering
-  const doctorDegrees = qualifications.filter(q => q.level !== 'LOCATION_OPTION')
+  const doctorDegrees = qualifications.filter(q => q.level !== 'LOCATION_OPTION' && q.level !== 'PLATFORM_PAYMENT_CONFIG')
   const locationOptions = qualifications.filter(q => q.level === 'LOCATION_OPTION')
 
   const categories = Array.from(new Set(specialties.map(s => s.category || 'Specialized Care'))).filter(Boolean)
