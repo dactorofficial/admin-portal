@@ -205,6 +205,27 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
             )}
           </div>
         </div>
+
+        <div className="bg-gradient-to-br from-blue-950/40 to-slate-800 border border-blue-500/30 p-6 rounded-2xl md:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-base text-white flex items-center gap-2">
+                <span>Support Website & Helpdesk Publisher</span>
+              </h3>
+              <p className="text-slate-400 text-xs mt-1.5 leading-relaxed max-w-2xl">
+                Configure and publish the official support URL. When doctors and clinics are awaiting verification, or when patients/staff tap &ldquo;Contact Us&rdquo; in settings, they will automatically be routed to your published support site.
+              </p>
+            </div>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('/support-settings')}
+                className="whitespace-nowrap px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-md shadow-blue-600/20"
+              >
+                Configure Support Website <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </div>
   )

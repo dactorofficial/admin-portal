@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { getAdminPassword, isMasterAdminEmail } from '../lib/adminPassword'
-import { ShieldCheck, Lock, Mail, Eye, EyeOff } from 'lucide-react'
+import { Lock, Mail, Eye, EyeOff } from 'lucide-react'
+import dactorLogo from '../assets/logo.png'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -53,9 +54,11 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-slate-900 px-4">
       <div className="max-w-md w-full bg-slate-800 border border-slate-700 p-8 rounded-2xl shadow-2xl text-white">
         <div className="flex flex-col items-center mb-6">
-          <div className="w-14 h-14 bg-indigo-600 rounded-2xl flex items-center justify-center shadow-lg shadow-indigo-500/30 mb-3">
-            <ShieldCheck className="w-8 h-8 text-white" />
-          </div>
+          <img
+            src={dactorLogo}
+            alt="Dactor Logo"
+            className="w-16 h-16 rounded-2xl object-contain drop-shadow-md mb-3 bg-white p-1"
+          />
           <h2 className="text-2xl font-bold tracking-tight">Dactor Super Admin</h2>
           <p className="text-slate-400 text-sm mt-1">Platform Verification & Oversight Console</p>
         </div>

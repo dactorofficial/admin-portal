@@ -120,7 +120,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
         supabase.from('medical_qualifications').select('*').order('degree_name')
       ])
 
-      if (specRes.data) setSpecialties(specRes.data as MedicalSpecialty[])
+      if (specRes.data) setSpecialties((specRes.data as MedicalSpecialty[]).filter(s => s.category !== 'system_config'))
       if (qualRes.data) setQualifications(qualRes.data as MedicalQualification[])
     } catch (err: any) {
       console.error('Failed to load taxonomy data:', err)
