@@ -11,6 +11,8 @@ import ClinicActivation from './pages/ClinicActivation'
 import MedicalTaxonomy from './pages/MedicalTaxonomy'
 import RecycleBin from './pages/RecycleBin'
 import SupportSettings from './pages/SupportSettings'
+import NotFound from './pages/NotFound'
+import ErrorBoundary from './components/ErrorBoundary'
 import {
   LayoutDashboard,
   Building2,
@@ -180,13 +182,14 @@ function App() {
       case '/broadcast': return <BroadcastNotification />
       case '/recycle-bin': return <RecycleBin />
       case '/support-settings': return <SupportSettings />
-      default: return <Dashboard onNavigate={navigate} />
+      default: return <NotFound currentPath={currentPath} onNavigate={navigate} />
     }
   }
 
   return (
-    <div className="flex h-screen bg-slate-900 text-slate-100 font-sans antialiased overflow-hidden">
-      {/* Sidebar Navigation */}
+    <ErrorBoundary>
+      <div className="flex h-screen bg-slate-900 text-slate-100 font-sans antialiased overflow-hidden">
+        {/* Sidebar Navigation */}
       <aside className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col">
         <div className="p-5 flex items-center gap-3 border-b border-slate-800">
           <img
@@ -467,7 +470,8 @@ function App() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </ErrorBoundary>
   )
 }
 
