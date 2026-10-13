@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 
 export default function SupportSettings() {
-  const [supportUrl, setSupportUrl] = useState('https://dactorofficial.github.io/support')
+  const [supportUrl, setSupportUrl] = useState('https://rajanpurbe.github.io/Dactor/support')
   const [supportPhone, setSupportPhone] = useState('+977 9800000000')
   const [supportEmail, setSupportEmail] = useState('dactorofficial@gmail.com')
   const [supportHours, setSupportHours] = useState('24/7 Regulatory & Onboarding Helpdesk')
@@ -247,7 +247,7 @@ export default function SupportSettings() {
                   type="text"
                   value={supportUrl}
                   onChange={(e) => setSupportUrl(e.target.value)}
-                  placeholder="https://dactorofficial.github.io/support or https://wa.me/..."
+                  placeholder="https://rajanpurbe.github.io/Dactor/support or https://wa.me/..."
                   className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-700 rounded-2xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition font-mono"
                   required
                 />
@@ -265,7 +265,7 @@ export default function SupportSettings() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
                   type="button"
-                  onClick={() => applyPreset('https://dactorofficial.github.io/support')}
+                  onClick={() => applyPreset('https://rajanpurbe.github.io/Dactor/support')}
                   className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 hover:border-indigo-500/50 text-left transition text-xs group"
                 >
                   <div className="font-bold text-white group-hover:text-indigo-300">GitHub Pages Site</div>
