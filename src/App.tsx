@@ -11,6 +11,7 @@ import ClinicActivation from './pages/ClinicActivation'
 import MedicalTaxonomy from './pages/MedicalTaxonomy'
 import RecycleBin from './pages/RecycleBin'
 import SupportSettings from './pages/SupportSettings'
+import SupportTickets from './pages/SupportTickets'
 import NotFound from './pages/NotFound'
 import ErrorBoundary from './components/ErrorBoundary'
 import {
@@ -31,11 +32,13 @@ import {
   AlertCircle,
   MapPin,
   Globe,
+  Headphones,
 } from 'lucide-react'
 import dactorLogo from './assets/logo.png'
 
 function App() {
   const [archivedCount, setArchivedCount] = useState<number>(0)
+  const [pendingTicketsCount, setPendingTicketsCount] = useState<number>(0)
   const [session, setSession] = useState<any>(() => {
     try {
       const saved = localStorage.getItem('dactor_admin_session')
@@ -75,19 +78,30 @@ function App() {
   }, [])
 
   useEffect(() => {
-    const fetchArchivedCount = async () => {
+    const fetchCounters = async () => {
       try {
-        const { count } = await supabase
+        const { count: cCount } = await supabase
           .from('clinics')
           .select('*', { count: 'exact', head: true })
           .eq('is_archived', true)
-        if (count !== null) setArchivedCount(count)
+        if (cCount !== null) setArchivedCount(cCount)
       } catch (e) {
         console.warn('Error fetching archived count:', e)
       }
+
+      try {
+        const { count: tCount } = await supabase
+          .from('notifications')
+          .select('*', { count: 'exact', head: true })
+          .or('type.eq.support_ticket,title.ilike.%[Support%')
+          .eq('is_read', false)
+        if (tCount !== null) setPendingTicketsCount(tCount)
+      } catch (e) {
+        console.warn('Error fetching pending tickets count:', e)
+      }
     }
-    fetchArchivedCount()
-    const interval = setInterval(fetchArchivedCount, 12000)
+    fetchCounters()
+    const interval = setInterval(fetchCounters, 12000)
     return () => clearInterval(interval)
   }, [currentPath])
 
@@ -181,6 +195,7 @@ function App() {
       case '/editor': return <ClinicEditor />
       case '/broadcast': return <BroadcastNotification />
       case '/recycle-bin': return <RecycleBin />
+      case '/tickets': return <SupportTickets />
       case '/support-settings': return <SupportSettings />
       default: return <NotFound currentPath={currentPath} onNavigate={navigate} />
     }
@@ -299,6 +314,25 @@ function App() {
             {archivedCount > 0 && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30">
                 {archivedCount}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => navigate('/tickets')}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              currentPath === '/tickets'
+                ? 'bg-purple-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <div className="flex items-center space-x-3">
+              <Headphones className="w-4 h-4 text-purple-400" />
+              <span>Support Tickets</span>
+            </div>
+            {pendingTicketsCount > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                {pendingTicketsCount}
               </span>
             )}
           </button>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Building2, UserCog, Activity, CheckCircle, Clock, ArrowRight, Trash2 } from 'lucide-react'
+import { Building2, UserCog, Activity, CheckCircle, Clock, ArrowRight, Trash2, Headphones } from 'lucide-react'
 
 interface DashboardProps {
   onNavigate?: (path: string) => void
@@ -15,6 +15,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
     totalAppointments: 0,
     totalServices: 0,
     archivedClinics: 0,
+    openTickets: 0,
   })
   const [loading, setLoading] = useState(true)
 
@@ -32,7 +33,8 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         { count: pendingDoctors },
         { count: totalAppointments },
         { count: totalServices },
-        { count: archivedClinics }
+        { count: archivedClinics },
+        { count: openTickets }
       ] = await Promise.all([
         supabase.from('clinics').select('*', { count: 'exact', head: true }).or('is_archived.is.null,is_archived.eq.false'),
         supabase.from('clinics').select('*', { count: 'exact', head: true }).eq('verification_status', 'pending').or('is_archived.is.null,is_archived.eq.false'),
@@ -41,6 +43,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         supabase.from('appointments').select('*', { count: 'exact', head: true }),
         supabase.from('clinic_services').select('*', { count: 'exact', head: true }),
         supabase.from('clinics').select('*', { count: 'exact', head: true }).eq('is_archived', true),
+        supabase.from('notifications').select('*', { count: 'exact', head: true }).or('type.eq.support_ticket,title.ilike.%[Support%').eq('is_read', false),
       ])
 
       setStats({
@@ -51,6 +54,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         totalAppointments: totalAppointments ?? 0,
         totalServices: totalServices ?? 0,
         archivedClinics: archivedClinics ?? 0,
+        openTickets: openTickets ?? 0,
       })
     } catch (e) {
       console.error('Error fetching dashboard stats:', e)
@@ -62,6 +66,7 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
         totalAppointments: 0,
         totalServices: 0,
         archivedClinics: 0,
+        openTickets: 0,
       })
     } finally {
       setLoading(false)
@@ -201,6 +206,33 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 className="whitespace-nowrap px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-md shadow-purple-600/20"
               >
                 Manage Activations & Subscriptions <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-purple-950/40 to-slate-800 border border-purple-500/30 p-6 rounded-2xl md:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-base text-white flex items-center gap-2">
+                <Headphones className="w-5 h-5 text-purple-400" />
+                <span>Support Tickets Desk</span>
+                {stats.openTickets > 0 && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                    {stats.openTickets} Pending Triage
+                  </span>
+                )}
+              </h3>
+              <p className="text-slate-400 text-xs mt-1.5 leading-relaxed max-w-2xl">
+                Resolve live patient inquiries, appointment issues, clinic onboarding questions, and diagnostic tracking queries in real time with custom administrator resolution notes.
+              </p>
+            </div>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('/tickets')}
+                className="whitespace-nowrap px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-md shadow-purple-600/20"
+              >
+                Open Tickets Desk <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>

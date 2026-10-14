@@ -224,3 +224,19 @@ export interface MedicalQualification {
   created_at: string
   updated_at?: string
 }
+
+export interface SupportTicket {
+  id: string
+  ticketCode: string
+  name?: string
+  email: string
+  phone: string
+  role: 'clinic' | 'doctor' | 'patient' | 'other'
+  category: string
+  customReason?: string
+  message?: string
+  status: 'open' | 'in_progress' | 'resolved' | 'closed'
+  createdAt: string
+  resolvedAt?: string
+  adminNotes?: string
+}
