@@ -33,6 +33,7 @@ export interface Clinic {
   contact_email: string
   latitude: number
   longitude: number
+  geohash?: string
   verification_status: VerificationStatus
   auto_notify_threshold: number
   description?: string

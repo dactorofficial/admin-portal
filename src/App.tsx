@@ -8,6 +8,7 @@ import DoctorKYC from './pages/DoctorKYC'
 import ClinicEditor from './pages/ClinicEditor'
 import BroadcastNotification from './pages/BroadcastNotification'
 import ClinicActivation from './pages/ClinicActivation'
+import PaymentLogs from './pages/PaymentLogs'
 import MedicalTaxonomy from './pages/MedicalTaxonomy'
 import RecycleBin from './pages/RecycleBin'
 import SupportSettings from './pages/SupportSettings'
@@ -22,6 +23,7 @@ import {
   Bell,
   LogOut,
   CreditCard,
+  DollarSign,
   Stethoscope,
   Trash2,
   KeyRound,
@@ -34,20 +36,21 @@ import {
   Globe,
   Headphones,
 } from 'lucide-react'
-import dactorLogo from './assets/logo.png'
+import dactorLogo from './assets/logo.svg'
+
+// Purge legacy client-side admin session and password storage on module initialization
+try {
+  localStorage.removeItem('dactor_admin_session')
+  localStorage.removeItem('dactor_admin_passwords')
+} catch {
+  // Ignore localStorage access errors
+}
 
 function App() {
   const [archivedCount, setArchivedCount] = useState<number>(0)
   const [pendingTicketsCount, setPendingTicketsCount] = useState<number>(0)
-  const [session, setSession] = useState<any>(() => {
-    try {
-      const saved = localStorage.getItem('dactor_admin_session')
-      return saved ? JSON.parse(saved) : null
-    } catch {
-      return null
-    }
-  })
-  const [checkingAuth, setCheckingAuth] = useState(!session)
+  const [session, setSession] = useState<any>(null)
+  const [checkingAuth, setCheckingAuth] = useState(true)
   const [currentPath, setCurrentPath] = useState('/dashboard')
 
   // Change Password Modal state
@@ -63,18 +66,88 @@ function App() {
   const [pwdSuccess, setPwdSuccess] = useState('')
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setSession(session)
-      setCheckingAuth(false)
+    // Purge legacy storage keys on mount
+    try {
+      localStorage.removeItem('dactor_admin_session')
+      localStorage.removeItem('dactor_admin_passwords')
+    } catch {
+      // Ignore storage errors
+    }
+
+    let isMounted = true
+
+    const validateAndSetSession = async (currentSession: any) => {
+      if (!currentSession?.user) {
+        if (isMounted) {
+          setSession(null)
+          setCheckingAuth(false)
+        }
+        return
+      }
+
+      // Verify that authenticated user has profiles.role === 'super_admin'
+      try {
+        const { data: profile, error: profileErr } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('auth_uid', currentSession.user.id)
+          .maybeSingle()
+
+        let role = profile?.role
+        if (!role && currentSession.user.email) {
+          const { data: emailProfile } = await supabase
+            .from('profiles')
+            .select('role')
+            .eq('email', currentSession.user.email.toLowerCase())
+            .maybeSingle()
+          role = emailProfile?.role
+        }
+
+        if (profileErr || role !== 'super_admin') {
+          console.warn('Unauthorized admin access attempt; revoking session.')
+          await supabase.auth.signOut()
+          if (isMounted) {
+            setSession(null)
+            setCheckingAuth(false)
+          }
+          return
+        }
+
+        if (isMounted) {
+          setSession(currentSession)
+          setCheckingAuth(false)
+        }
+      } catch (e) {
+        console.warn('Role verification failed:', e)
+        await supabase.auth.signOut()
+        if (isMounted) {
+          setSession(null)
+          setCheckingAuth(false)
+        }
+      }
+    }
+
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+      validateAndSetSession(initialSession)
     })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (session) setSession(session)
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'SIGNED_OUT' || !newSession) {
+        if (isMounted) {
+          setSession(null)
+          setCheckingAuth(false)
+        }
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'USER_UPDATED') {
+        validateAndSetSession(newSession)
+      }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      isMounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
@@ -106,13 +179,18 @@ function App() {
   }, [currentPath])
 
   const handleSignOut = async () => {
-    localStorage.removeItem('dactor_admin_session')
+    try {
+      localStorage.removeItem('dactor_admin_session')
+      localStorage.removeItem('dactor_admin_passwords')
+    } catch {
+      // Ignore storage errors
+    }
     await supabase.auth.signOut()
     setSession(null)
   }
 
   const adminEmail: string =
-    session?.email || session?.user?.email || 'notanubhavjha@gmail.com'
+    session?.user?.email || session?.email || ''
 
   const openChangePasswordModal = () => {
     setCurrentPassword('')
@@ -152,9 +230,15 @@ function App() {
       return
     }
 
+    const targetEmail = adminEmail || session?.user?.email
+    if (!targetEmail) {
+      setPwdError('No active admin session found. Please sign in again.')
+      return
+    }
+
     setPwdLoading(true)
     try {
-      const result = await updateAdminPassword(adminEmail, cur, next)
+      const result = await updateAdminPassword(targetEmail, cur, next)
       if (!result.success) {
         setPwdError(result.error || 'Failed to update password.')
       } else {
@@ -189,6 +273,7 @@ function App() {
       case '/dashboard': return <Dashboard onNavigate={navigate} />
       case '/clinics': return <ClinicVerification />
       case '/activation': return <ClinicActivation />
+      case '/payments': return <PaymentLogs onNavigate={navigate} />
       case '/doctors': return <DoctorKYC />
       case '/taxonomy': return <MedicalTaxonomy initialTab="specialties" />
       case '/locations': return <MedicalTaxonomy initialTab="locations" />
@@ -242,6 +327,16 @@ function App() {
           </button>
 
           <button
+            onClick={() => navigate('/payments')}
+            className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
+              currentPath === '/payments' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
+            }`}
+          >
+            <DollarSign className="w-4 h-4 text-emerald-400" />
+            <span>Payment Logs & Ledger</span>
+          </button>
+
+          <button
             onClick={() => navigate('/clinics')}
             className={`w-full flex items-center space-x-3 px-3.5 py-2.5 rounded-xl text-sm font-medium transition ${
               currentPath === '/clinics' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20' : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900'
@@ -278,7 +373,7 @@ function App() {
             }`}
           >
             <MapPin className="w-4 h-4" />
-            <span>Patient App Locations</span>
+            <span>Cities Dropdown Manager</span>
           </button>
 
           <button

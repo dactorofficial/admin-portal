@@ -361,7 +361,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
     e.preventDefault()
     const cleanCity = locationForm.city_name.trim()
     if (!cleanCity) {
-      showNotification('Location / City name is required.', true)
+      showNotification('City / Location name is required.', true)
       return
     }
     const cleanAliases = locationForm.aliases.trim() || cleanCity.toLowerCase()
@@ -382,9 +382,17 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
           .eq('id', editingLocation.id)
 
         if (error) throw error
-        showNotification(`Location option "${cleanCity}" updated for Patient App`)
+        showNotification(`City "${cleanCity}" updated in dropdown list`)
+        setQualifications(prev => prev.map(q => q.id === editingLocation.id ? {
+          ...q,
+          degree_name: cleanCity,
+          field_of_study: cleanCoords,
+          description: cleanAliases,
+          is_active: locationForm.is_active,
+          updated_at: new Date().toISOString()
+        } : q))
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from('medical_qualifications')
           .insert([{
             degree_name: cleanCity,
@@ -393,27 +401,34 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
             description: cleanAliases,
             is_active: locationForm.is_active
           }])
+          .select()
 
         if (error) throw error
-        showNotification(`New location option "${cleanCity}" added to Patient App`)
+        showNotification(`New city "${cleanCity}" added to dropdown list`)
+        if (data && data[0]) {
+          setQualifications(prev => [data[0] as MedicalQualification, ...prev])
+        }
       }
 
       setShowLocationModal(false)
       fetchTaxonomyData()
     } catch (err: any) {
-      showNotification(err.message || 'Error saving location option', true)
+      showNotification(err.message || 'Error saving city option', true)
     }
   }
 
   const handleDeleteLocation = async (id: string, name: string) => {
-    if (!confirm(`Are you sure you want to remove location "${name}" from the Patient App selector?`)) return
+    if (!confirm(`Are you sure you want to delete city "${name}" from the location dropdown?`)) return
     try {
+      // Optimistic instant removal from UI
+      setQualifications(prev => prev.filter(q => q.id !== id))
       const { error } = await supabase.from('medical_qualifications').delete().eq('id', id)
       if (error) throw error
-      showNotification(`Removed location option "${name}"`)
+      showNotification(`City "${name}" deleted from dropdown list`)
       fetchTaxonomyData()
     } catch (err: any) {
-      showNotification(err.message || 'Error deleting location option', true)
+      showNotification(err.message || 'Error deleting city option', true)
+      fetchTaxonomyData()
     }
   }
 
@@ -512,7 +527,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
               className="flex items-center gap-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-md shadow-emerald-600/30 transition"
             >
               <Plus className="w-4 h-4" />
-              <span>Add Location Option</span>
+              <span>Add City to Dropdown</span>
             </button>
           )}
         </div>
@@ -617,7 +632,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
           }`}
         >
           <MapPin className="w-4 h-4 text-emerald-400" />
-          <span>Patient App Locations</span>
+          <span>Cities & Locations Dropdown</span>
           <span className="ml-1 px-2 py-0.5 text-[10px] rounded-full bg-emerald-500/20 text-emerald-300 font-bold">
             {locationOptions.length}
           </span>
@@ -868,10 +883,10 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
                 </div>
                 <div>
                   <div className="text-xs font-bold text-white uppercase tracking-wider">
-                    Live Patient App Top Location Selector Preview
+                    Live App & Website City Dropdown Preview
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    These active options appear in the location selector at the top of the Patient App when viewing the clinic list.
+                    These active cities appear in the location dropdown across the Patient App and Website.
                   </div>
                 </div>
               </div>
@@ -1236,23 +1251,23 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
                 <MapPin className="w-4 h-4" />
               </div>
               <h2 className="text-lg font-bold text-white">
-                {editingLocation ? 'Edit Patient App Location Option' : 'Add Patient App Location Option'}
+                {editingLocation ? 'Edit City in Location Dropdown' : 'Add New City to Location Dropdown'}
               </h2>
             </div>
             <p className="text-xs text-slate-400 mb-4">
-              Configure the location option shown at the top of the Patient App when viewing the clinic list.
+              Configure the city name and area search keywords shown in the location dropdown on the website and mobile app.
             </p>
 
             <form onSubmit={handleSaveLocation} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Location / City Name * (Shown in Top Selector)
+                  City Name * (Shown in Location Dropdown)
                 </label>
                 <input
                   type="text"
                   value={locationForm.city_name}
                   onChange={e => setLocationForm({ ...locationForm, city_name: e.target.value })}
-                  placeholder="e.g. Kathmandu, Pokhara, Janakpur, Itahari, Birtamode..."
+                  placeholder="e.g. Kathmandu, Pokhara, Janakpur, Itahari, Birtamode, Butwal..."
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
                   required
                 />
@@ -1270,7 +1285,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
                   className="w-full bg-slate-950 border border-slate-700 rounded-xl px-3.5 py-2 text-white text-xs focus:outline-none focus:border-emerald-500"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">
-                  When a patient selects this location, clinics whose address or name contains any of these keywords will be matched.
+                  When a patient selects this city, clinics whose address or name contains any of these keywords will be matched.
                 </p>
               </div>
 
@@ -1299,7 +1314,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
                   className="rounded border-slate-700 text-emerald-600 focus:ring-emerald-500"
                 />
                 <label htmlFor="locActive" className="text-xs text-slate-300">
-                  Show this location in the Patient App top location selector
+                  Show this city in the location dropdown (Website & Mobile App)
                 </label>
               </div>
 
@@ -1315,7 +1330,7 @@ export default function MedicalTaxonomy({ initialTab = 'specialties' }: { initia
                   type="submit"
                   className="px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white transition shadow-md shadow-emerald-600/30"
                 >
-                  {editingLocation ? 'Update Location Option' : 'Save Location Option'}
+                  {editingLocation ? 'Update City' : 'Add City to Dropdown'}
                 </button>
               </div>
             </form>

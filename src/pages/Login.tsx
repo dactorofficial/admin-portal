@@ -1,8 +1,7 @@
 import { useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { getAdminPassword, isMasterAdminEmail } from '../lib/adminPassword'
 import { Lock, Mail, Eye, EyeOff } from 'lucide-react'
-import dactorLogo from '../assets/logo.png'
+import dactorLogo from '../assets/logo.svg'
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -19,30 +18,63 @@ export default function Login() {
     const trimmedEmail = email.trim().toLowerCase()
     const trimmedPassword = password.trim()
 
-    // 1. Check official Super Admin credentials (supports updated passwords via Supabase/localStorage)
-    if (isMasterAdminEmail(trimmedEmail)) {
-      const expectedPassword = await getAdminPassword(trimmedEmail)
-      if (trimmedPassword === expectedPassword) {
-        localStorage.setItem('dactor_admin_session', JSON.stringify({
-          email: trimmedEmail,
-          role: 'super_admin'
-        }))
-        window.location.reload()
-        return
-      }
+    if (!trimmedEmail || !trimmedPassword) {
+      setError('Please provide both email and password.')
+      setLoading(false)
+      return
     }
 
-    // 2. Otherwise authenticate against Supabase Auth
     try {
+      // 1. Authenticate against Supabase Auth
       const { data, error: authError } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
-        password: trimmedPassword
+        password: trimmedPassword,
       })
+
       if (authError) {
         setError(authError.message)
-      } else if (data?.session) {
-        window.location.reload()
+        return
       }
+
+      if (!data?.session) {
+        setError('No active session returned by server.')
+        return
+      }
+
+      // 2. Server-side role authorization check: Must be super_admin
+      const { data: profile, error: profileErr } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('auth_uid', data.session.user.id)
+        .maybeSingle()
+
+      let role = profile?.role
+      if (!role && trimmedEmail) {
+        const { data: emailProfile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('email', trimmedEmail)
+          .maybeSingle()
+        role = emailProfile?.role
+      }
+
+      if (profileErr || role !== 'super_admin') {
+        // Immediately revoke session for unauthorized user
+        await supabase.auth.signOut()
+        setError('Access denied: You do not have super administrator permissions.')
+        return
+      }
+
+      // 3. Purge legacy browser storage artifacts on successful authentication
+      try {
+        localStorage.removeItem('dactor_admin_session')
+        localStorage.removeItem('dactor_admin_passwords')
+      } catch {
+        // Ignore storage errors
+      }
+
+      // 4. Reload to initialize admin console with validated session
+      window.location.reload()
     } catch (err: any) {
       setError(err?.message || 'Login failed. Please verify credentials.')
     } finally {

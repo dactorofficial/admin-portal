@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
-import { Building2, UserCog, Activity, CheckCircle, Clock, ArrowRight, Trash2, Headphones } from 'lucide-react'
+import { Building2, UserCog, Activity, CheckCircle, Clock, ArrowRight, Trash2, Headphones, DollarSign } from 'lucide-react'
 
 interface DashboardProps {
   onNavigate?: (path: string) => void
@@ -233,6 +233,28 @@ export default function Dashboard({ onNavigate }: DashboardProps) {
                 className="whitespace-nowrap px-4 py-2.5 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-md shadow-purple-600/20"
               >
                 Open Tickets Desk <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-indigo-950/40 to-slate-800 border border-indigo-500/30 p-6 rounded-2xl md:col-span-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h3 className="font-bold text-base text-white flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-emerald-400" />
+                <span>Financial & Payment Logs Ledger</span>
+              </h3>
+              <p className="text-slate-400 text-xs mt-1.5 leading-relaxed max-w-2xl">
+                Audit clinic subscription renewals (1M &amp; 12M plans), reconcile 5% Pay-at-Desk platform commissions, and track doctor OPD new-patient volume per day and month with one-click CSV and printable reports.
+              </p>
+            </div>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('/payments')}
+                className="whitespace-nowrap px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition flex items-center gap-2 shadow-md shadow-indigo-600/20"
+              >
+                Open Payment Logs <ArrowRight className="w-3.5 h-3.5" />
               </button>
             )}
           </div>

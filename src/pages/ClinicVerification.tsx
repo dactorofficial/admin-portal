@@ -1,9 +1,27 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import type { Clinic, ClinicType, VerificationStatus } from '../lib/types'
-import { CheckCircle2, XCircle, MapPin, Phone, Mail, Building, RefreshCw, FileText, Image as ImageIcon, Shield, AlertCircle, Trash2 } from 'lucide-react'
+import { resolveImageUrl } from '../lib/storage'
+import ClinicImageModal from '../components/ClinicImageModal'
+import {
+  CheckCircle2,
+  X,
+  XCircle,
+  MapPin,
+  Phone,
+  Mail,
+  Building,
+  RefreshCw,
+  FileText,
+  Image as ImageIcon,
+  Shield,
+  AlertCircle,
+  Trash2,
+  Edit,
+  Camera
+} from 'lucide-react'
 
-function parseClinicMeta(clinic: Clinic) {
+async function parseClinicMeta(clinic: Clinic): Promise<Clinic> {
   let pan = clinic.pan_number || ''
   let managerPhone = clinic.manager_phone || ''
   let pictures = clinic.pictures || []
@@ -50,11 +68,25 @@ function parseClinicMeta(clinic: Clinic) {
     }).filter(Boolean)
   }
 
-  // Resolve registration document URL
-  if (regDoc && !regDoc.startsWith('http') && !regDoc.startsWith('content://')) {
-    const clean = regDoc.replace(/^clinic_photos\//, '').replace(/^\//, '')
-    const { data } = supabase.storage.from('clinic_photos').getPublicUrl(clean)
-    if (data?.publicUrl) regDoc = data.publicUrl
+  // Resolve registration document URL via short-lived signed URL from clinic-docs-private (900s expiry)
+  if (regDoc && !regDoc.startsWith('content://')) {
+    let clean = regDoc.split('?')[0]
+    clean = clean.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/(public|sign)\/[^\/]+\//, '')
+    clean = clean.replace(/^(clinic_photos|clinic-docs-private|clinic_files)\//, '')
+    clean = clean.replace(/^\//, '')
+
+    if (clean) {
+      try {
+        const { data: signedData, error: signErr } = await supabase.storage
+          .from('clinic-docs-private')
+          .createSignedUrl(clean, 900)
+        if (!signErr && signedData?.signedUrl) {
+          regDoc = signedData.signedUrl
+        }
+      } catch (err) {
+        console.warn('Error generating signed URL for clinic registration doc:', err)
+      }
+    }
   }
 
   return {
@@ -74,6 +106,7 @@ export default function ClinicVerification() {
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [selectedPreviewImage, setSelectedPreviewImage] = useState<string | null>(null)
+  const [editingImagesClinic, setEditingImagesClinic] = useState<Clinic | null>(null)
 
   useEffect(() => {
     fetchClinics()
@@ -99,7 +132,7 @@ export default function ClinicVerification() {
         console.error('Supabase fetch clinics error:', error)
         setErrorMsg(error.message)
       } else if (data) {
-        const enriched = (data as Clinic[]).map(parseClinicMeta)
+        const enriched = await Promise.all((data as Clinic[]).map(parseClinicMeta))
         setClinics(enriched)
       }
     } catch (e: any) {
@@ -244,9 +277,29 @@ export default function ClinicVerification() {
               <div className="space-y-4 flex-1">
                 {/* Header Row */}
                 <div className="flex items-start gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5">
-                    <Building className="w-6 h-6" />
+                  <div
+                    onClick={() => setEditingImagesClinic(clinic)}
+                    className="relative group w-14 h-14 rounded-2xl bg-indigo-500/10 border-2 border-indigo-500/30 flex items-center justify-center text-indigo-400 shrink-0 mt-0.5 overflow-hidden cursor-pointer shadow-sm hover:border-indigo-400 transition"
+                    title="Click to edit clinic logo & pictures"
+                  >
+                    {clinic.logo_url ? (
+                      <img
+                        src={resolveImageUrl(clinic.logo_url, 'clinic_photos')}
+                        alt={clinic.name}
+                        className="w-full h-full object-cover group-hover:scale-105 transition"
+                        onError={e => {
+                          (e.target as HTMLElement).style.display = 'none'
+                        }}
+                      />
+                    ) : (
+                      <Building className="w-6 h-6" />
+                    )}
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition flex flex-col items-center justify-center gap-0.5">
+                      <Camera className="w-4 h-4 text-white" />
+                      <span className="text-[8px] text-white font-bold uppercase tracking-wider">Logo</span>
+                    </div>
                   </div>
+
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-bold text-lg text-white">{clinic.name}</h3>
@@ -294,6 +347,24 @@ export default function ClinicVerification() {
                         href={clinic.registration_doc_url}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={async (e) => {
+                          if (!clinic.registration_doc_url || clinic.registration_doc_url.startsWith('content://')) return
+                          let clean = clinic.registration_doc_url.split('?')[0]
+                          clean = clean.replace(/^https?:\/\/[^\/]+\/storage\/v1\/object\/(public|sign)\/[^\/]+\//, '')
+                          clean = clean.replace(/^(clinic_photos|clinic-docs-private|clinic_files)\//, '')
+                          clean = clean.replace(/^\//, '')
+                          if (clean && !clinic.registration_doc_url.includes('/sign/')) {
+                            e.preventDefault()
+                            try {
+                              const { data: signData } = await supabase.storage.from('clinic-docs-private').createSignedUrl(clean, 900)
+                              if (signData?.signedUrl) {
+                                window.open(signData.signedUrl, '_blank')
+                              }
+                            } catch (err) {
+                              console.warn('Failed to generate signed URL on click:', err)
+                            }
+                          }
+                        }}
                         className="flex items-center gap-1 bg-emerald-950/40 hover:bg-emerald-950/70 text-emerald-400 px-2.5 py-1 rounded-lg border border-emerald-700/50 transition font-semibold"
                       >
                         <FileText className="w-3.5 h-3.5" /> View Registration Paper
@@ -302,12 +373,31 @@ export default function ClinicVerification() {
                   )}
                 </div>
 
-                {/* Pictures Gallery (Compact Previews) */}
-                {clinic.pictures && clinic.pictures.length > 0 && (
-                  <div className="space-y-1.5 pt-1">
+                {/* Pictures Gallery */}
+                <div className="space-y-1.5 pt-1">
+                  <div className="flex items-center justify-between">
                     <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                      <ImageIcon className="w-3.5 h-3.5" /> Clinic Pictures ({clinic.pictures.length})
+                      <ImageIcon className="w-3.5 h-3.5" /> Clinic Pictures ({(clinic.pictures || []).length})
                     </span>
+                    <button
+                      onClick={() => setEditingImagesClinic(clinic)}
+                      className="text-[11px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1 transition"
+                    >
+                      <Edit className="w-3 h-3" /> Edit Photos & Logo
+                    </button>
+                  </div>
+
+                  {(!clinic.pictures || clinic.pictures.length === 0) ? (
+                    <div className="text-xs text-slate-500 bg-slate-900/40 p-2.5 rounded-xl border border-slate-700/40 flex items-center justify-between">
+                      <span>No facility photos attached yet.</span>
+                      <button
+                        onClick={() => setEditingImagesClinic(clinic)}
+                        className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold underline"
+                      >
+                        + Add Photos
+                      </button>
+                    </div>
+                  ) : (
                     <div className="flex flex-wrap items-center gap-2">
                       {clinic.pictures.map((picUrl, idx) => (
                         picUrl.startsWith('content://') ? (
@@ -338,8 +428,8 @@ export default function ClinicVerification() {
                         )
                       ))}
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
 
                 {/* Description */}
                 {clinic.description && (
@@ -418,7 +508,15 @@ export default function ClinicVerification() {
                   )}
                 </div>
 
-                <div className="flex items-center justify-end w-full pt-1">
+                <div className="flex items-center justify-between w-full pt-1">
+                  <button
+                    onClick={() => setEditingImagesClinic(clinic)}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-indigo-400 hover:text-indigo-300 hover:bg-indigo-500/10 px-2.5 py-1 rounded-lg transition border border-indigo-500/20"
+                    title="Edit Clinic Logo and Pictures"
+                  >
+                    <ImageIcon className="w-3.5 h-3.5" />
+                    <span>Edit Images</span>
+                  </button>
                   <button
                     onClick={() => archiveClinic(clinic.id, clinic.name)}
                     className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 px-2 py-1 rounded-lg transition"
@@ -440,20 +538,33 @@ export default function ClinicVerification() {
           className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4"
           onClick={() => setSelectedPreviewImage(null)}
         >
-          <div className="relative max-w-3xl max-h-[90vh] bg-slate-900 border border-slate-700 rounded-2xl overflow-hidden p-2">
-            <button
-              onClick={() => setSelectedPreviewImage(null)}
-              className="absolute top-4 right-4 bg-black/70 text-white p-2 rounded-full hover:bg-black transition z-10"
-            >
-              ✕
-            </button>
-            <img
-              src={selectedPreviewImage}
-              alt="Full preview"
-              className="max-h-[80vh] w-auto mx-auto rounded-xl object-contain"
-            />
+          <div className="relative max-w-4xl max-h-[90vh] bg-slate-900 rounded-2xl overflow-hidden border border-slate-700 shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="p-3 bg-slate-800/80 border-b border-slate-700 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-300">Photo Preview</span>
+              <button
+                onClick={() => setSelectedPreviewImage(null)}
+                className="p-1 hover:bg-slate-700 rounded-lg text-slate-400 hover:text-white"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-4 flex items-center justify-center max-h-[80vh]">
+              <img src={selectedPreviewImage} alt="Full preview" className="max-h-[75vh] max-w-full object-contain rounded-lg" />
+            </div>
           </div>
         </div>
+      )}
+
+      {/* Edit Clinic Images Modal */}
+      {editingImagesClinic && (
+        <ClinicImageModal
+          clinic={editingImagesClinic}
+          isOpen={!!editingImagesClinic}
+          onClose={() => setEditingImagesClinic(null)}
+          onSuccess={(updatedClinic) => {
+            setClinics(prev => prev.map(c => c.id === updatedClinic.id ? updatedClinic : c))
+          }}
+        />
       )}
     </div>
   )

@@ -352,6 +352,30 @@ export default function ClinicActivation() {
       }
 
       setClinics(prev => prev.map(c => c.id === activeModalClinic.id ? { ...c, ...updates } : c))
+
+      // Central financial ledger audit record
+      const paidAmt = parseFloat(actPaidAmount) || 0
+      if (paidAmt > 0 || actIsEnabled) {
+        supabase
+          .from('clinic_subscription_payments')
+          .insert({
+            clinic_id: activeModalClinic.id,
+            amount: paidAmt,
+            payment_method: 'MANUAL_SUPERADMIN',
+            status: actIsEnabled ? 'VERIFIED' : 'PENDING',
+            duration_months: actPlan === '12_month' ? 12 : 1,
+            notes: actNotes.trim() || `Admin activation renewal: ${actPlan || 'custom'} plan`,
+            metadata: {
+              admin_action: true,
+              expires_at: finalExpiresAt,
+              plan: actPlan,
+            },
+          })
+          .then(({ error: logErr }) => {
+            if (logErr) console.warn('Could not record subscription payment audit log:', logErr.message)
+          })
+      }
+
       setModalType(null)
       setActiveModalClinic(null)
       fetchClinicsAndStats()
@@ -385,15 +409,53 @@ export default function ClinicActivation() {
     if (!activeModalClinic || !notifyTitle.trim() || !notifyMessage.trim()) return
     setSendingNotification(true)
     try {
-      await supabase.from('notifications').insert([{
-        title: notifyTitle.trim(),
-        message: notifyMessage.trim(),
+      const clinicId = activeModalClinic.id
+      const cleanTitle = notifyTitle.trim()
+      const cleanMessage = notifyMessage.trim()
+      const notifsToInsert: any[] = [{
+        title: cleanTitle,
+        message: cleanMessage,
         type: 'activation_alert',
         target_audience: 'specific',
-        user_id: activeModalClinic.id,
+        user_id: clinicId,
         is_read: false,
         created_at: new Date().toISOString()
-      }])
+      }]
+
+      // Also lookup any associated profiles by clinic contact email / phone so mobile sessions signed in via personal profile also receive it
+      const email = activeModalClinic.contact_email?.trim()
+      const phone = activeModalClinic.contact_phone?.trim()
+      if (email || phone) {
+        try {
+          const conditions: string[] = []
+          if (email) conditions.push(`email.eq.${email}`)
+          if (phone) conditions.push(`phone.eq.${phone}`)
+          const { data: matchedProfiles } = await supabase
+            .from('profiles')
+            .select('id')
+            .or(conditions.join(','))
+
+          if (matchedProfiles && matchedProfiles.length > 0) {
+            for (const prof of matchedProfiles) {
+              if (prof.id && prof.id !== clinicId) {
+                notifsToInsert.push({
+                  title: cleanTitle,
+                  message: cleanMessage,
+                  type: 'activation_alert',
+                  target_audience: 'specific',
+                  user_id: prof.id,
+                  is_read: false,
+                  created_at: new Date().toISOString()
+                })
+              }
+            }
+          }
+        } catch (profileErr) {
+          console.warn('Profile lookup for clinic notification:', profileErr)
+        }
+      }
+
+      await supabase.from('notifications').insert(notifsToInsert)
       setNotifySuccess(true)
       setTimeout(() => {
         setModalType(null)
