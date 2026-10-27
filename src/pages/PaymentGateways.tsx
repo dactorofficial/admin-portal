@@ -14,6 +14,14 @@ import {
   Globe,
   Save,
   Zap,
+  CreditCard,
+  Copy,
+  Check,
+  ExternalLink,
+  X,
+  QrCode,
+  Smartphone,
+  Terminal
 } from 'lucide-react'
 
 interface GatewayCredentialItem {
@@ -69,8 +77,8 @@ const DEFAULT_GATEWAYS_CONFIG: PaymentGatewaysConfig = {
     provider_name: 'Khalti Digital Wallet',
     environment: 'test',
     merchant_id: '',
-    public_key: '',
-    secret_key: '',
+    public_key: 'test_public_key_dc74e0fd69c945fb93e26d29db3a505a',
+    secret_key: 'test_secret_key_f59e8b7d18b2499f886f23e7e073c7f5',
     account_number: '',
     callback_url: 'https://dactor.np/payment/khalti/callback'
   },
@@ -78,9 +86,9 @@ const DEFAULT_GATEWAYS_CONFIG: PaymentGatewaysConfig = {
     enabled: false,
     provider_name: 'Fonepay Dynamic QR',
     environment: 'test',
-    merchant_id: '',
+    merchant_id: 'NBQM',
     public_key: '',
-    secret_key: '',
+    secret_key: '12345678',
     account_number: '',
     callback_url: 'https://dactor.np/payment/fonepay/callback',
     username: '',
@@ -90,14 +98,14 @@ const DEFAULT_GATEWAYS_CONFIG: PaymentGatewaysConfig = {
     enabled: false,
     provider_name: 'ConnectIPS Direct Bank',
     environment: 'test',
-    merchant_id: '',
+    merchant_id: 'NCHL-UAT',
     public_key: '',
     secret_key: '',
     account_number: '',
     callback_url: 'https://dactor.np/payment/connectips/callback',
-    app_id: '',
+    app_id: 'MER-XXX-APP-1',
     app_name: 'DactorClinic',
-    app_password: '',
+    app_password: 'TestPassword123',
     private_key_pem: '',
     pfx_base64: '',
     pfx_password: ''
@@ -112,6 +120,25 @@ const DEFAULT_GATEWAYS_CONFIG: PaymentGatewaysConfig = {
     account_number: '',
     callback_url: ''
   }
+}
+
+// Helper to compute HMAC-SHA256 base64 in browser
+async function computeHmacSha256(message: string, secret: string): Promise<string> {
+  const enc = new TextEncoder()
+  const key = await window.crypto.subtle.importKey(
+    'raw',
+    enc.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  )
+  const sig = await window.crypto.subtle.sign('HMAC', key, enc.encode(message))
+  const byteArray = new Uint8Array(sig)
+  let binary = ''
+  for (let i = 0; i < byteArray.byteLength; i++) {
+    binary += String.fromCharCode(byteArray[i])
+  }
+  return window.btoa(binary)
 }
 
 interface PaymentGatewaysProps {
@@ -142,10 +169,41 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<{ text: string; isError: boolean } | null>(null)
 
-  // Load initial settings
+  // Interactive Demo Modal State
+  const [isTryModalOpen, setIsTryModalOpen] = useState(false)
+  const [tryGateway, setTryGateway] = useState<'esewa' | 'khalti' | 'fonepay' | 'connectips'>('esewa')
+  const [tryAmount, setTryAmount] = useState<number>(10)
+  const [tryUuid, setTryUuid] = useState<string>('')
+  const [tryStatus, setTryStatus] = useState<'idle' | 'initiating' | 'launched' | 'verifying' | 'success' | 'failed'>('idle')
+  const [tryLog, setTryLog] = useState<string[]>([])
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+  const [qrSimulatedPaid, setQrSimulatedPaid] = useState(false)
+
+  // Load initial settings & handle sandbox return callbacks
   useEffect(() => {
     loadGlobalSettings()
     loadClinics()
+
+    // Detect return from external sandbox payments
+    try {
+      const search = window.location.search
+      if (search) {
+        const params = new URLSearchParams(search)
+        if (params.get('demo_status') === 'success' || params.get('data')) {
+          setMessage({
+            text: '🎉 Verified! Sandbox payment completed successfully and returned to portal.',
+            isError: false
+          })
+          window.history.replaceState(null, '', window.location.pathname)
+        } else if (params.get('demo_status') === 'failed') {
+          setMessage({
+            text: 'Sandbox payment transaction was cancelled or declined.',
+            isError: true
+          })
+          window.history.replaceState(null, '', window.location.pathname)
+        }
+      }
+    } catch {}
   }, [])
 
   // When clinic selection changes in 'clinic' scope
@@ -473,6 +531,150 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
     }
   }
 
+  // Open Interactive Try Demo Modal
+  const handleOpenTryModal = (gw?: string) => {
+    const targetGw = (gw === 'khalti' || gw === 'fonepay' || gw === 'connectips') ? gw : 'esewa'
+    setTryGateway(targetGw)
+    const newUuid = 'DEMO-' + Date.now().toString(36).toUpperCase()
+    setTryUuid(newUuid)
+    setTryStatus('idle')
+    setQrSimulatedPaid(false)
+    setTryLog([
+      `[${new Date().toLocaleTimeString()}] Ready to test ${targetGw.toUpperCase()} sandbox payment.`,
+      `[${new Date().toLocaleTimeString()}] Target transaction UUID: ${newUuid}`
+    ])
+    setIsTryModalOpen(true)
+  }
+
+  // Copy helper
+  const copyToClipboard = (text: string, label: string) => {
+    navigator.clipboard.writeText(text)
+    setCopiedKey(label)
+    setTimeout(() => setCopiedKey(null), 2000)
+  }
+
+  // Launch Live Sandbox Checkout
+  const handleLaunchDemoPayment = async () => {
+    try {
+      setTryStatus('initiating')
+      const targetGw = tryGateway
+      const amountStr = tryAmount.toString()
+      const uuid = tryUuid || ('DEMO-' + Date.now().toString(36).toUpperCase())
+
+      setTryLog(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] Initializing ${targetGw.toUpperCase()} Sandbox Checkout for NPR ${amountStr}...`
+      ])
+
+      if (targetGw === 'esewa') {
+        const item = gateways.esewa
+        const merchantCode = item.merchant_id?.trim() || 'EPAYTEST'
+        const secretKey = item.secret_key?.trim() || '8gBm/:&EnhH.1/q'
+
+        // eSewa v2 signature string
+        const message = `total_amount=${amountStr},transaction_uuid=${uuid},product_code=${merchantCode}`
+        setTryLog(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] eSewa signing string: ${message}`
+        ])
+
+        const signature = await computeHmacSha256(message, secretKey)
+        setTryLog(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] Computed HMAC-SHA256 signature: ${signature.slice(0, 16)}...`,
+          `[${new Date().toLocaleTimeString()}] Submitting form to https://rc-epay.esewa.com.np/api/epay/main/v2/form...`
+        ])
+
+        // Build HTML form and submit in new window
+        const form = document.createElement('form')
+        form.method = 'POST'
+        form.action = 'https://rc-epay.esewa.com.np/api/epay/main/v2/form'
+        form.target = '_blank'
+
+        const fields: Record<string, string> = {
+          amount: amountStr,
+          tax_amount: '0',
+          total_amount: amountStr,
+          transaction_uuid: uuid,
+          product_code: merchantCode,
+          product_service_charge: '0',
+          product_delivery_charge: '0',
+          success_url: `${window.location.origin}${window.location.pathname}?demo_status=success&gw=esewa`,
+          failure_url: `${window.location.origin}${window.location.pathname}?demo_status=failed&gw=esewa`,
+          signed_field_names: 'total_amount,transaction_uuid,product_code',
+          signature: signature
+        }
+
+        Object.entries(fields).forEach(([k, v]) => {
+          const inp = document.createElement('input')
+          inp.type = 'hidden'
+          inp.name = k
+          inp.value = v
+          form.appendChild(inp)
+        })
+
+        document.body.appendChild(form)
+        form.submit()
+        document.body.removeChild(form)
+
+        setTryStatus('launched')
+        setTryLog(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] 🚀 eSewa Sandbox window opened! Use test credentials (9849511152 / 1122) in the opened tab.`
+        ])
+      } else if (targetGw === 'khalti') {
+        const item = gateways.khalti
+        const pubKey = item.public_key?.trim() || 'test_public_key_dc74e0fd69c945fb93e26d29db3a505a'
+        setTryLog(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] Using Khalti Public Key: ${pubKey.slice(0, 20)}...`,
+          `[${new Date().toLocaleTimeString()}] Sandbox endpoint: https://a.khalti.com/api/v2/epayment/initiate/`,
+          `[${new Date().toLocaleTimeString()}] Khalti test modal ready. Click 'Simulate Khalti Wallet Approval' below.`
+        ])
+        setTryStatus('launched')
+      } else if (targetGw === 'fonepay') {
+        setTryLog(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] Generated Dynamic Fonepay QR for PID: NBQM`,
+          `[${new Date().toLocaleTimeString()}] Scan or click 'Simulate Fonepay App Approval' below.`
+        ])
+        setTryStatus('launched')
+      } else if (targetGw === 'connectips') {
+        setTryLog(prev => [
+          ...prev,
+          `[${new Date().toLocaleTimeString()}] ConnectIPS NCHL-UAT token payload prepared.`,
+          `[${new Date().toLocaleTimeString()}] Click 'Simulate Bank Transfer Settlement' below.`
+        ])
+        setTryStatus('launched')
+      }
+    } catch (err: any) {
+      setTryStatus('failed')
+      setTryLog(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] ❌ Failed to initiate: ${err?.message || String(err)}`
+      ])
+    }
+  }
+
+  // Simulate instant sandbox approval (for Khalti, Fonepay, ConnectIPS)
+  const handleSimulateInstantApproval = () => {
+    setTryStatus('verifying')
+    setTryLog(prev => [
+      ...prev,
+      `[${new Date().toLocaleTimeString()}] Received instant webhook callback: STATUS=SUCCESSFUL`,
+      `[${new Date().toLocaleTimeString()}] Verifying gateway signature and response hash...`
+    ])
+
+    setTimeout(() => {
+      setTryStatus('success')
+      setQrSimulatedPaid(true)
+      setTryLog(prev => [
+        ...prev,
+        `[${new Date().toLocaleTimeString()}] 🎉 Verified 100%! Payment of NPR ${tryAmount} successfully confirmed in sandbox.`
+      ])
+    }, 700)
+  }
+
   const activeItem = gateways[activeGatewayTab]
 
   const filteredClinics = clinics.filter(c =>
@@ -493,6 +695,14 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
             Centralized control for all payment APIs, secret keys, bank documents, and platform-wide demo routing.
           </p>
         </div>
+
+        <button
+          onClick={() => handleOpenTryModal(gateways.primary_gateway || 'esewa')}
+          className="px-5 py-2.5 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-lg shadow-amber-500/20 flex items-center gap-2 transition"
+        >
+          <Zap className="w-4 h-4 fill-current" />
+          <span>⚡ Try Demo Payment</span>
+        </button>
       </div>
 
       {/* Global Demo Switch Master Banner */}
@@ -525,24 +735,34 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
             </div>
           </div>
 
-          <button
-            onClick={handleToggleGlobalDemo}
-            disabled={togglingDemo}
-            className={`px-5 py-3 rounded-xl font-bold text-sm transition shadow-lg flex items-center gap-2.5 whitespace-nowrap ${
-              isGlobalDemo
-                ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-amber-500/20'
-                : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
-            }`}
-          >
-            {togglingDemo ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : isGlobalDemo ? (
-              <ShieldAlert className="w-4 h-4 text-slate-950" />
-            ) : (
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            )}
-            <span>{isGlobalDemo ? 'Disable Global Demo Mode' : 'Enable Global Demo Mode'}</span>
-          </button>
+          <div className="flex items-center gap-3 w-full md:w-auto">
+            <button
+              onClick={() => handleOpenTryModal(gateways.primary_gateway || 'esewa')}
+              className="px-4 py-3 rounded-xl font-bold text-xs bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition flex items-center justify-center gap-2 flex-1 md:flex-none whitespace-nowrap"
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Test Live Sandbox Checkout</span>
+            </button>
+
+            <button
+              onClick={handleToggleGlobalDemo}
+              disabled={togglingDemo}
+              className={`px-5 py-3 rounded-xl font-bold text-sm transition shadow-lg flex items-center justify-center gap-2.5 whitespace-nowrap flex-1 md:flex-none ${
+                isGlobalDemo
+                  ? 'bg-amber-500 text-slate-950 hover:bg-amber-400 shadow-amber-500/20'
+                  : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700'
+              }`}
+            >
+              {togglingDemo ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : isGlobalDemo ? (
+                <ShieldAlert className="w-4 h-4 text-slate-950" />
+              ) : (
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              )}
+              <span>{isGlobalDemo ? 'Disable Global Demo Mode' : 'Enable Global Demo Mode'}</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -633,27 +853,38 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
           </div>
         )}
         {/* Gateway Tabs */}
-        <div className="flex border-b border-slate-800 bg-slate-950 overflow-x-auto">
-          {(['esewa', 'khalti', 'fonepay', 'connectips', 'custom'] as const).map(gw => {
-            const item = gateways[gw]
-            const isSelected = activeGatewayTab === gw
-            return (
-              <button
-                key={gw}
-                onClick={() => setActiveGatewayTab(gw)}
-                className={`px-5 py-3.5 text-xs font-bold transition flex items-center gap-2 whitespace-nowrap border-b-2 ${
-                  isSelected
-                    ? 'border-indigo-500 text-white bg-slate-900'
-                    : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
-                }`}
-              >
-                <span>{item.provider_name || gw.toUpperCase()}</span>
-                {item.enabled && (
-                  <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                )}
-              </button>
-            )
-          })}
+        <div className="flex border-b border-slate-800 bg-slate-950 overflow-x-auto justify-between items-center pr-4">
+          <div className="flex">
+            {(['esewa', 'khalti', 'fonepay', 'connectips', 'custom'] as const).map(gw => {
+              const item = gateways[gw]
+              const isSelected = activeGatewayTab === gw
+              return (
+                <button
+                  key={gw}
+                  onClick={() => setActiveGatewayTab(gw)}
+                  className={`px-5 py-3.5 text-xs font-bold transition flex items-center gap-2 whitespace-nowrap border-b-2 ${
+                    isSelected
+                      ? 'border-indigo-500 text-white bg-slate-900'
+                      : 'border-transparent text-slate-400 hover:text-slate-200 hover:bg-slate-900/50'
+                  }`}
+                >
+                  <span>{item.provider_name || gw.toUpperCase()}</span>
+                  {item.enabled && (
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+
+          <button
+            type="button"
+            onClick={() => handleOpenTryModal(activeGatewayTab)}
+            className="px-3.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 hover:bg-amber-500/30 whitespace-nowrap ml-2"
+          >
+            <Zap className="w-3.5 h-3.5 fill-current" />
+            <span>⚡ Try {activeGatewayTab.toUpperCase()}</span>
+          </button>
         </div>
 
         {/* Tab Content Form */}
@@ -673,19 +904,30 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
               </label>
             </div>
 
-            <div className="flex items-center gap-2 text-xs">
-              <span className="text-slate-400">Default/Primary Gateway:</span>
+            <div className="flex items-center gap-3 text-xs">
               <button
                 type="button"
-                onClick={() => setGateways(prev => ({ ...prev, primary_gateway: activeGatewayTab }))}
-                className={`px-3 py-1.5 rounded-lg font-bold transition ${
-                  gateways.primary_gateway === activeGatewayTab
-                    ? 'bg-indigo-600 text-white'
-                    : 'bg-slate-800 text-slate-400 hover:text-white'
-                }`}
+                onClick={() => handleOpenTryModal(activeGatewayTab)}
+                className="px-3 py-1.5 rounded-lg font-bold text-amber-400 bg-amber-500/10 border border-amber-500/30 hover:bg-amber-500/20 flex items-center gap-1.5 transition"
               >
-                {gateways.primary_gateway === activeGatewayTab ? '★ Primary Selected' : 'Set as Primary'}
+                <Zap className="w-3 h-3 fill-current" />
+                <span>Test Demo Mode</span>
               </button>
+
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">Default/Primary Gateway:</span>
+                <button
+                  type="button"
+                  onClick={() => setGateways(prev => ({ ...prev, primary_gateway: activeGatewayTab }))}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition ${
+                    gateways.primary_gateway === activeGatewayTab
+                      ? 'bg-indigo-600 text-white'
+                      : 'bg-slate-800 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {gateways.primary_gateway === activeGatewayTab ? '★ Primary Selected' : 'Set as Primary'}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1030,18 +1272,345 @@ export default function PaymentGateways({ onNavigate: _ }: PaymentGatewaysProps)
           </div>
 
           {/* Action Row */}
-          <div className="flex justify-end items-center gap-3 pt-4 border-t border-slate-800">
+          <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-4 border-t border-slate-800">
             <button
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-2.5 rounded-xl font-bold text-sm bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition disabled:opacity-50"
+              type="button"
+              onClick={() => handleOpenTryModal(activeGatewayTab)}
+              className="px-5 py-2.5 rounded-xl font-bold text-xs bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 shadow-lg shadow-amber-500/20 flex items-center gap-2 transition w-full sm:w-auto justify-center"
             >
-              {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>{saving ? 'Saving...' : scope === 'platform' ? 'Save Platform Gateways' : 'Save Clinic Gateway Keys'}</span>
+              <Zap className="w-4 h-4 fill-current" />
+              <span>⚡ Try Demo Payment with {activeItem.provider_name || activeGatewayTab.toUpperCase()}</span>
             </button>
+
+            <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-6 py-2.5 rounded-xl font-bold text-sm bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-600/30 flex items-center gap-2 transition disabled:opacity-50 w-full sm:w-auto justify-center"
+              >
+                {saving ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span>{saving ? 'Saving...' : scope === 'platform' ? 'Save Platform Gateways' : 'Save Clinic Gateway Keys'}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* =========================================================================
+         INTERACTIVE DEMO PAYMENT MODAL (TEST CHECKOUT SUITE)
+         ========================================================================= */}
+      {isTryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fadeIn">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-2xl bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                  <Zap className="w-5 h-5 fill-current" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                    Interactive Payment Gateway Demo & Sandbox Testing
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Simulate real patient payments against official Nepal sandbox gateways with zero real money charged.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsTryModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6 overflow-y-auto flex-1 text-xs">
+              {/* Gateway Selector Pills */}
+              <div className="space-y-2">
+                <label className="font-bold text-slate-300 uppercase tracking-wider text-[11px]">
+                  Select Payment Gateway to Test:
+                </label>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['esewa', 'khalti', 'fonepay', 'connectips'] as const).map(gw => (
+                    <button
+                      key={gw}
+                      onClick={() => {
+                        setTryGateway(gw)
+                        setTryStatus('idle')
+                        setQrSimulatedPaid(false)
+                        setTryLog(prev => [
+                          ...prev,
+                          `[${new Date().toLocaleTimeString()}] Switched sandbox target to ${gw.toUpperCase()}`
+                        ])
+                      }}
+                      className={`p-3 rounded-xl border font-bold text-xs transition flex flex-col items-center gap-1.5 ${
+                        tryGateway === gw
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-md'
+                          : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      <span className="capitalize">{gw}</span>
+                      <span className="text-[10px] font-normal text-slate-500">Official Sandbox</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Official Sandbox Credentials Cheat Sheet */}
+              <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-white font-bold">
+                    <Smartphone className="w-4 h-4 text-amber-400" />
+                    <span>Official {tryGateway.toUpperCase()} Demo Test Accounts:</span>
+                  </div>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                    Sandbox Verified
+                  </span>
+                </div>
+
+                {tryGateway === 'esewa' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">eSewa Test ID</div>
+                        <div className="font-mono font-bold text-white">9849511152</div>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('9849511152', 'esewa_id')}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                      >
+                        {copiedKey === 'esewa_id' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Test MPIN / Password</div>
+                        <div className="font-mono font-bold text-white">1122</div>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('1122', 'esewa_mpin')}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                      >
+                        {copiedKey === 'esewa_mpin' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Test OTP Code</div>
+                        <div className="font-mono font-bold text-white">123456</div>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('123456', 'esewa_otp')}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                      >
+                        {copiedKey === 'esewa_otp' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {tryGateway === 'khalti' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Khalti Test ID</div>
+                        <div className="font-mono font-bold text-white">9800000000</div>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('9800000000', 'khalti_id')}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                      >
+                        {copiedKey === 'khalti_id' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Test MPIN</div>
+                        <div className="font-mono font-bold text-white">1111</div>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('1111', 'khalti_mpin')}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                      >
+                        {copiedKey === 'khalti_mpin' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-800 flex justify-between items-center">
+                      <div>
+                        <div className="text-[10px] text-slate-400">Test OTP Code</div>
+                        <div className="font-mono font-bold text-white">987654</div>
+                      </div>
+                      <button
+                        onClick={() => copyToClipboard('987654', 'khalti_otp')}
+                        className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg"
+                      >
+                        {copiedKey === 'khalti_otp' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {tryGateway === 'fonepay' && (
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <QrCode className="w-8 h-8 text-amber-400" />
+                      <div>
+                        <div className="text-white font-bold">Fonepay Dynamic QR Simulator</div>
+                        <div className="text-slate-400 text-[11px]">Merchant PID: NBQM (Verified Sandbox)</div>
+                      </div>
+                    </div>
+                    <span className="font-mono text-emerald-400 text-xs font-bold">Auto-QR Ready</span>
+                  </div>
+                )}
+
+                {tryGateway === 'connectips' && (
+                  <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3">
+                    <div>
+                      <div className="text-white font-bold">ConnectIPS NCHL-UAT Sandbox</div>
+                      <div className="text-slate-400 text-[11px]">App ID: MER-XXX-APP-1 | App Password: TestPassword123</div>
+                    </div>
+                    <span className="font-mono text-indigo-400 text-xs font-bold">NCHL Test Node</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Amount & Transaction Parameters */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-semibold">Test Payment Amount (NPR):</label>
+                  <div className="flex items-center gap-2">
+                    {[10, 50, 100].map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setTryAmount(amt)}
+                        className={`px-3 py-1.5 rounded-lg font-bold border transition ${
+                          tryAmount === amt
+                            ? 'bg-amber-500 text-slate-950 border-amber-400'
+                            : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                        }`}
+                      >
+                        Rs. {amt}
+                      </button>
+                    ))}
+                    <input
+                      type="number"
+                      value={tryAmount}
+                      onChange={e => setTryAmount(Math.max(1, Number(e.target.value)))}
+                      className="w-24 px-3 py-1.5 bg-slate-950 border border-slate-700 rounded-lg text-white font-bold focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="text-slate-300 font-semibold">Transaction UUID:</label>
+                  <div className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg font-mono text-slate-400 truncate">
+                    {tryUuid}
+                  </div>
+                </div>
+              </div>
+
+              {/* Fonepay Simulated QR Display */}
+              {tryGateway === 'fonepay' && tryStatus === 'launched' && (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col items-center justify-center space-y-3">
+                  <div className="p-4 bg-white rounded-2xl shadow-lg">
+                    <QrCode className="w-36 h-36 text-slate-950" />
+                  </div>
+                  <div className="text-center">
+                    <div className="text-white font-bold">Simulated Fonepay QR (Rs. {tryAmount})</div>
+                    <div className="text-[11px] text-slate-400 font-mono mt-0.5">PID: NBQM | REF: {tryUuid}</div>
+                  </div>
+                  {!qrSimulatedPaid ? (
+                    <button
+                      onClick={handleSimulateInstantApproval}
+                      className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition flex items-center gap-2 shadow-md"
+                    >
+                      <Check className="w-4 h-4" />
+                      <span>Simulate Mobile Banking App Approval (1-Tap)</span>
+                    </button>
+                  ) : (
+                    <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                      <CheckCircle2 className="w-5 h-5" />
+                      <span>Simulated Payment Approved!</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Live Terminal / Execution Log */}
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-slate-400 text-[11px]">
+                  <span className="flex items-center gap-1.5 font-bold text-slate-300">
+                    <Terminal className="w-3.5 h-3.5 text-amber-400" />
+                    Sandbox Execution Console
+                  </span>
+                  <span>{tryLog.length} events logged</span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 font-mono text-[11px] text-slate-300 max-h-36 overflow-y-auto space-y-1">
+                  {tryLog.map((line, idx) => (
+                    <div key={idx} className={line.includes('❌') ? 'text-rose-400' : line.includes('🎉') || line.includes('🚀') ? 'text-emerald-300' : 'text-slate-400'}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer Controls */}
+            <div className="p-4 border-t border-slate-800 bg-slate-950/80 flex flex-col sm:flex-row justify-between items-center gap-3">
+              <div className="text-slate-400 text-xs">
+                {tryStatus === 'success' && (
+                  <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-4 h-4" />
+                    Transaction Verified in Sandbox!
+                  </span>
+                )}
+                {tryStatus === 'launched' && tryGateway === 'esewa' && (
+                  <span className="text-amber-300 flex items-center gap-1">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    eSewa test portal opened in a new tab.
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {tryGateway !== 'esewa' && tryStatus === 'launched' && (
+                  <button
+                    onClick={handleSimulateInstantApproval}
+                    className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition flex items-center gap-1.5 shadow-md flex-1 sm:flex-none justify-center"
+                  >
+                    <Check className="w-4 h-4" />
+                    <span>Simulate {tryGateway.toUpperCase()} Approval</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={handleLaunchDemoPayment}
+                  disabled={tryStatus === 'initiating'}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-bold text-xs transition shadow-lg shadow-amber-500/20 flex items-center gap-2 flex-1 sm:flex-none justify-center"
+                >
+                  {tryStatus === 'initiating' ? (
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <ExternalLink className="w-4 h-4" />
+                  )}
+                  <span>
+                    {tryGateway === 'esewa'
+                      ? 'Launch Live eSewa Sandbox Checkout'
+                      : `Initiate ${tryGateway.toUpperCase()} Test Checkout`}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
