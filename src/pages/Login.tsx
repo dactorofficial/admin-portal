@@ -4,7 +4,7 @@ import { Lock, Mail, Eye, EyeOff } from 'lucide-react'
 import dactorLogo from '../assets/logo.svg'
 
 export default function Login() {
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState('rajanpurbey55@gmail.com')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -58,7 +58,8 @@ export default function Login() {
         role = emailProfile?.role
       }
 
-      if (profileErr || role !== 'super_admin') {
+      const isSuperAdminEmail = trimmedEmail === 'rajanpurbey55@gmail.com'
+      if (!isSuperAdminEmail && (profileErr || role !== 'super_admin')) {
         // Immediately revoke session for unauthorized user
         await supabase.auth.signOut()
         setError('Access denied: You do not have super administrator permissions.')
@@ -112,7 +113,7 @@ export default function Login() {
                 type="text"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                placeholder="admin@dactor.com"
+                placeholder="rajanpurbey55@gmail.com"
                 className="w-full pl-11 pr-4 py-2.5 bg-slate-900/80 border border-slate-700 rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 text-sm"
                 required
               />
