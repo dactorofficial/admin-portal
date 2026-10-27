@@ -1319,6 +1319,8 @@ export default function PaymentLogs({ onNavigate: _onNavigate }: PaymentLogsProp
                   >
                     <option value="ESEWA">eSewa Wallet</option>
                     <option value="KHALTI">Khalti Wallet</option>
+                    <option value="FONEPAY">Fonepay QR / Direct Banking</option>
+                    <option value="CONNECTIPS">ConnectIPS Direct Bank</option>
                     <option value="BANK_TRANSFER">Direct Bank Deposit / QR</option>
                     <option value="CASH">Cash / Offline Handover</option>
                   </select>
