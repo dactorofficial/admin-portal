@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Opening eSewa Secure Checkout...</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      margin: 0;
+      background: #f8fafc;
+      color: #0f172a;
+    }
+    .card {
+      background: #fff;
+      padding: 36px 28px;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+      text-align: center;
+      max-width: 380px;
+      width: 90%;
+    }
+    .spinner {
+      width: 42px;
+      height: 42px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #60bb46;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 20px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    h2 { font-size: 20px; margin: 0 0 10px; font-weight: 700; }
+    p { font-size: 14px; color: #64748b; margin: 0 0 24px; line-height: 1.5; }
+    .btn {
+      background: #60bb46;
+      color: #fff;
+      border: none;
+      padding: 13px 28px;
+      border-radius: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 15px;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #4ea836; }
+    .error-box {
+      display: none;
+      background: #fef2f2;
+      color: #dc2626;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      margin-top: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="spinner" id="spinner"></div>
+    <h2 id="heading">Connecting to eSewa</h2>
+    <p id="subtext">Please wait while we transfer you to secure payment...</p>
+    <div id="errorBox" class="error-box"></div>
+    <form id="esewaForm" method="POST" action="https://rc-epay.esewa.com.np/api/epay/main/v2/form">
+      <div id="formFields"></div>
+      <noscript>
+        <button type="submit" class="btn">Continue to eSewa</button>
+      </noscript>
+    </form>
+    <button id="manualBtn" class="btn" style="display:none;" onclick="document.getElementById('esewaForm').submit()">
+      Continue to eSewa
+    </button>
+  </div>
+
+  <script>
+    async function loadAndSubmit() {
+      const params = new URLSearchParams(window.location.search);
+      const attemptId = params.get('attempt_id');
+      const heading = document.getElementById('heading');
+      const subtext = document.getElementById('subtext');
+      const spinner = document.getElementById('spinner');
+      const errorBox = document.getElementById('errorBox');
+      const manualBtn = document.getElementById('manualBtn');
+
+      if (!attemptId) {
+        spinner.style.display = 'none';
+        heading.textContent = 'Invalid Payment Request';
+        subtext.textContent = 'No payment session ID was provided. Please return to the app and retry.';
+        return;
+      }
+
+      try {
+        const url = `https://ojfoofojcpabqegxmsab.supabase.co/functions/v1/appointment-payment?action=get_form_payload&attempt_id=${encodeURIComponent(attemptId)}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        if (!res.ok || data.error) {
+          throw new Error(data.error || 'Failed to load gateway parameters');
+        }
+
+        const form = document.getElementById('esewaForm');
+        form.action = data.endpoint || 'https://rc-epay.esewa.com.np/api/epay/main/v2/form';
+        
+        const fieldsDiv = document.getElementById('formFields');
+        fieldsDiv.innerHTML = '';
+        Object.entries(data.fields || {}).forEach(([k, v]) => {
+          const inp = document.createElement('input');
+          inp.type = 'hidden';
+          inp.name = k;
+          inp.value = v;
+          fieldsDiv.appendChild(inp);
+        });
+
+        // Auto submit
+        form.submit();
+
+        // Also show manual button after 2.5s if auto-submit is delayed
+        setTimeout(() => {
+          spinner.style.display = 'none';
+          manualBtn.style.display = 'inline-block';
+          subtext.textContent = 'If you are not redirected automatically, tap the button below:';
+        }, 2500);
+
+      } catch (err) {
+        spinner.style.display = 'none';
+        heading.textContent = 'Unable to Open Payment';
+        subtext.textContent = 'Could not initialize payment session.';
+        errorBox.textContent = err.message || 'Please return to the app and select Pay at Desk or retry.';
+        errorBox.style.display = 'block';
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', loadAndSubmit);
+  </script>
+</body>
+</html>
